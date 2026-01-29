@@ -95,7 +95,7 @@ impl DirectTcpTunnelTransport {
         let client_bytes = client_to_upstream_bytes.load(Ordering::Relaxed);
         let upstream_bytes = upstream_to_client_bytes.load(Ordering::Relaxed);
         
-        println!("CONNECT tunnel closed: {}→upstream {} bytes, upstream→client {} bytes, duration {:?}", 
+        println!("CONNECT tunnel closed: client→upstream {} bytes, upstream→client {} bytes, duration {:?}", 
                  client_bytes, upstream_bytes, duration);
         
         // Handle thread panics or errors

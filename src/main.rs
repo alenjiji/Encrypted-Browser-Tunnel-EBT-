@@ -13,8 +13,19 @@ use client::{ProxyConfig, ProxyType};
 use session::TunnelSession;
 use config::{CapabilityPolicy, ExecutionMode, Capability, ProxyPolicy, ProxyMode};
 
+#[cfg(feature = "tokio")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    tokio_main().await
+}
+
+#[cfg(not(feature = "tokio"))]
+fn main() -> Result<(), Box<dyn Error>> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(tokio_main())
+}
+
+async fn tokio_main() -> Result<(), Box<dyn Error>> {
     println!("=== DIRECT CONNECT MODE (NO SSH) ===");
     
     // TEMPORARILY DISABLED FOR CONNECT DEBUGGING:

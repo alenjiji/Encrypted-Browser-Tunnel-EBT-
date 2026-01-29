@@ -6,8 +6,12 @@ description = "Educational encrypted browser tunnel implementation"
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = ["full"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 rustls = "0.21"
 rustls-native-certs = "0.6"
 tokio-rustls = "0.24"
+
+[features]
+default = ["tokio"]
+async = ["tokio"]
