@@ -16,6 +16,7 @@ mod attack_surfaces;
 mod trust_boundaries;
 mod prohibited_capabilities;
 mod threat_model_tests;
+mod crypto_transport_design;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
