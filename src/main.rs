@@ -7,6 +7,8 @@ mod real_transport;
 mod real_proxy;
 mod real_dns;
 mod tls_wrapper;
+#[cfg(feature = "async_tunnel")]
+mod async_tunnel;
 
 use std::error::Error;
 use client::{ProxyConfig, ProxyType};

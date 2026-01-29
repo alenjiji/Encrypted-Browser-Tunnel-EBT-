@@ -34,6 +34,38 @@ impl DirectTcpTunnelTransport {
     
     /// Start bidirectional forwarding between client and TCP stream
     pub fn start_forwarding(&self, client_stream: TcpStream) -> Result<(), TransportError> {
+        #[cfg(feature = "async_tunnel")]
+        {
+            return self.start_async_forwarding(client_stream);
+        }
+        
+        #[cfg(not(feature = "async_tunnel"))]
+        {
+            return self.start_blocking_forwarding(client_stream);
+        }
+    }
+    
+    #[cfg(feature = "async_tunnel")]
+    fn start_async_forwarding(&self, client_stream: TcpStream) -> Result<(), TransportError> {
+        let tcp_stream = self.tcp_stream.as_ref()
+            .ok_or(TransportError::ConnectionFailed)?
+            .lock().map_err(|_| TransportError::ConnectionFailed)?
+            .try_clone().map_err(|_| TransportError::ConnectionFailed)?;
+        
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let client = tokio::net::TcpStream::from_std(client_stream)
+                .map_err(|_| TransportError::ConnectionFailed)?;
+            let target = tokio::net::TcpStream::from_std(tcp_stream)
+                .map_err(|_| TransportError::ConnectionFailed)?;
+            
+            crate::async_tunnel::tunnel_connect(client, target).await
+                .map_err(|_| TransportError::ConnectionFailed)
+        })
+    }
+    
+    #[cfg(not(feature = "async_tunnel"))]
+    fn start_blocking_forwarding(&self, client_stream: TcpStream) -> Result<(), TransportError> {
         let tcp_stream = self.tcp_stream.as_ref()
             .ok_or(TransportError::ConnectionFailed)?
             .lock().map_err(|_| TransportError::ConnectionFailed)?
