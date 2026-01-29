@@ -7,6 +7,8 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, Shutdown};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::transport::{EncryptedTransport, TransportError};
 
 /// Real TCP transport implementation with direct connection
@@ -61,21 +63,40 @@ impl DirectTcpTunnelTransport {
         tcp_write.set_read_timeout(None).ok();
         tcp_write.set_write_timeout(None).ok();
         
+        // Metrics tracking
+        let start_time = Instant::now();
+        let client_to_upstream_bytes = Arc::new(AtomicU64::new(0));
+        let upstream_to_client_bytes = Arc::new(AtomicU64::new(0));
+        
         // client → TCP (no mutex)
         let a = thread::Builder::new()
             .name("client-to-tcp".to_string())
-            .spawn(move || Self::forward_data_direct(client_read, tcp_write))
+            .spawn({
+                let counter = Arc::clone(&client_to_upstream_bytes);
+                move || Self::forward_data_with_metrics(client_read, tcp_write, counter)
+            })
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         // TCP → client (no mutex)
         let b = thread::Builder::new()
             .name("tcp-to-client".to_string())
-            .spawn(move || Self::forward_data_direct(tcp_read, client_write))
+            .spawn({
+                let counter = Arc::clone(&upstream_to_client_bytes);
+                move || Self::forward_data_with_metrics(tcp_read, client_write, counter)
+            })
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         // Wait for both threads to complete cleanly
         let result_a = a.join();
         let result_b = b.join();
+        
+        // Emit metrics once on connection close
+        let duration = start_time.elapsed();
+        let client_bytes = client_to_upstream_bytes.load(Ordering::Relaxed);
+        let upstream_bytes = upstream_to_client_bytes.load(Ordering::Relaxed);
+        
+        println!("CONNECT tunnel closed: {}→upstream {} bytes, upstream→client {} bytes, duration {:?}", 
+                 client_bytes, upstream_bytes, duration);
         
         // Handle thread panics or errors
         match (result_a, result_b) {
@@ -84,8 +105,8 @@ impl DirectTcpTunnelTransport {
         }
     }
     
-    /// Forward data directly between streams (no mutex)
-    fn forward_data_direct(mut src: TcpStream, mut dst: TcpStream) -> Result<(), TransportError> {
+    /// Forward data directly between streams with metrics (no mutex)
+    fn forward_data_with_metrics(mut src: TcpStream, mut dst: TcpStream, byte_counter: Arc<AtomicU64>) -> Result<(), TransportError> {
         let mut buf = [0u8; 65536]; // 64KB buffer
         loop {
             match src.read(&mut buf) {
@@ -98,6 +119,7 @@ impl DirectTcpTunnelTransport {
                     if let Err(_) = dst.write_all(&buf[..n]) {
                         return Ok(());
                     }
+                    byte_counter.fetch_add(n as u64, Ordering::Relaxed);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
