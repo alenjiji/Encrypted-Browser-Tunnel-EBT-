@@ -7,6 +7,7 @@ mod config;
 mod real_transport;
 mod real_proxy;
 mod real_dns;
+mod tls_wrapper;
 
 #[cfg(test)]
 mod test_transport;
