@@ -3,6 +3,7 @@ mod proxy;
 mod transport;
 mod dns;
 mod session;
+mod config;
 
 #[cfg(test)]
 mod test_transport;
