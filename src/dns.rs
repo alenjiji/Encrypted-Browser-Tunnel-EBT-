@@ -6,7 +6,7 @@ pub struct DnsResolver {
     server_address: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ResolverType {
     Local,
     Remote,
@@ -60,7 +60,7 @@ impl DnsResolver {
         Ok(DnsResponse {
             domain: query.domain,
             ip_address: None, // Placeholder - no actual resolution
-            resolved_via: self.resolver_type,
+            resolved_via: self.resolver_type.clone(),
         })
     }
     
@@ -81,3 +81,15 @@ pub enum DnsError {
     Timeout,
     InvalidDomain,
 }
+
+impl std::fmt::Display for DnsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DnsError::ResolutionFailed => write!(f, "DNS resolution failed"),
+            DnsError::Timeout => write!(f, "DNS query timeout"),
+            DnsError::InvalidDomain => write!(f, "Invalid domain name"),
+        }
+    }
+}
+
+impl std::error::Error for DnsError {}

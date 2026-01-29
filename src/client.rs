@@ -1,16 +1,17 @@
 /// Client device component - represents the browser/application side
+#[derive(Clone)]
 pub struct Client {
     proxy_config: ProxyConfig,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProxyConfig {
     pub proxy_type: ProxyType,
     pub address: String,
     pub port: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProxyType {
     SshSocks,
     HttpsConnect,
