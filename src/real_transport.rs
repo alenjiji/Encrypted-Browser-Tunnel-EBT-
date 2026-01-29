@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
+use crate::logging::LogLevel;
 #[cfg(feature = "single_hop_relay")]
 use crate::relay_transport::SingleHopRelayTransport;
 #[cfg(feature = "multi_hop_relay")]
@@ -156,8 +157,8 @@ impl DirectTcpTunnelTransport {
         let client_bytes = client_to_upstream_bytes.load(Ordering::Relaxed);
         let upstream_bytes = upstream_to_client_bytes.load(Ordering::Relaxed);
         
-        println!("CONNECT tunnel closed: client→upstream {} bytes, upstream→client {} bytes, duration {:?}", 
-                 client_bytes, upstream_bytes, duration);
+        log!(LogLevel::Debug, "CONNECT tunnel closed: client→upstream {} bytes, upstream→client {} bytes, duration {:?}", 
+             client_bytes, upstream_bytes, duration);
         
         // Handle thread panics or errors
         match (result_a, result_b) {
@@ -205,14 +206,14 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         for ip in ips {
             match self.relay_transport.establish_relay_connection(&ip.to_string(), self.target_port) {
                 Ok(tcp) => {
-                    println!("*** RELAY CONNECTION TO {}:{} ({}:{}) ***", 
-                             self.target_host, self.target_port, ip, self.target_port);
+                    log!(LogLevel::Debug, "*** RELAY CONNECTION TO {}:{} ({}:{}) ***", 
+                         self.target_host, self.target_port, ip, self.target_port);
                     
                     tcp.set_nodelay(true).ok();
                     
                     self.tcp_stream = Some(Arc::new(Mutex::new(tcp)));
-                    println!("Relay connection established to {}:{} via {}", 
-                             self.target_host, self.target_port, ip);
+                    log!(LogLevel::Debug, "Relay connection established to {}:{} via {}", 
+                         self.target_host, self.target_port, ip);
                     return Ok(());
                 }
                 Err(e) => {

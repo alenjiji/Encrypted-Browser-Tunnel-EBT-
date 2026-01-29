@@ -100,8 +100,10 @@ impl DnsResolver for DohResolver {
             return Ok(cached);
         }
         
-        let query = base64::engine::general_purpose::STANDARD.encode(format!("{}\x00\x01\x00\x01", hostname));
-        let url = format!("https://1.1.1.1/dns-query?dns={}", query);
+        let url = format!(
+            "https://1.1.1.1/dns-query?name={}&type=A",
+            hostname
+        );
         
         let response = self.client
             .get(&url)
