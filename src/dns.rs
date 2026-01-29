@@ -36,7 +36,7 @@ impl DnsResolver {
     pub fn new_local() -> Self {
         Self {
             resolver_type: ResolverType::Local,
-            server_address: "127.0.0.1".to_string(),
+            server_address: "local-dns.placeholder".to_string(),
         }
     }
     

@@ -45,7 +45,7 @@ impl TunnelConfig {
             },
             proxy_policy: ProxyPolicy {
                 mode: ProxyMode::Application,
-                bind_address: "0.0.0.0".to_string(),
+                bind_address: "proxy-bind.placeholder".to_string(),
                 bind_port: 8080,
                 authentication: None,
             },
