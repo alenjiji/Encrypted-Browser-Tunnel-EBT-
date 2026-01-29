@@ -1,5 +1,7 @@
 use std::net::TcpStream;
 use std::io::{Result, Write, Read};
+#[cfg(feature = "encrypted_control")]
+use crate::control_channel::ControlChannel;
 
 pub trait RelayTransport {
     fn establish_relay_connection(&mut self, target_host: &str, target_port: u16) -> Result<TcpStream>;
@@ -71,12 +73,18 @@ impl RelayTransport for SingleHopRelayTransport {
 #[cfg(feature = "multi_hop_relay")]
 pub struct MultiHopRelayTransport {
     relay_chain: Vec<(String, u16)>,
+    #[cfg(feature = "encrypted_control")]
+    control_channel: ControlChannel,
 }
 
 #[cfg(feature = "multi_hop_relay")]
 impl MultiHopRelayTransport {
     pub fn new(relay_chain: Vec<(String, u16)>) -> Self {
-        Self { relay_chain }
+        Self { 
+            relay_chain,
+            #[cfg(feature = "encrypted_control")]
+            control_channel: ControlChannel::new(),
+        }
     }
 }
 
@@ -94,39 +102,54 @@ impl RelayTransport for MultiHopRelayTransport {
         // Chain through each relay
         for i in 1..self.relay_chain.len() {
             let (next_host, next_port) = &self.relay_chain[i];
-            stream = Self::connect_through_relay(stream, next_host, *next_port)?;
+            stream = self.connect_through_relay(stream, next_host, *next_port)?;
         }
         
         // Final connection to target
-        Self::connect_through_relay(stream, target_host, target_port)
+        self.connect_through_relay(stream, target_host, target_port)
     }
 }
 
 #[cfg(feature = "multi_hop_relay")]
 impl MultiHopRelayTransport {
-    fn connect_through_relay(mut stream: TcpStream, target_host: &str, target_port: u16) -> Result<TcpStream> {
-        let connect_request = format!("CONNECT {}:{} HTTP/1.1\r\n\r\n", target_host, target_port);
-        stream.write_all(connect_request.as_bytes())?;
-        stream.flush()?;
-        
-        let mut response = [0u8; 1024];
-        let mut total_read = 0;
-        
-        loop {
-            let bytes_read = stream.read(&mut response[total_read..])?;
-            if bytes_read == 0 {
-                return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Relay closed connection"));
-            }
-            total_read += bytes_read;
+    fn connect_through_relay(&self, mut stream: TcpStream, target_host: &str, target_port: u16) -> Result<TcpStream> {
+        #[cfg(feature = "encrypted_control")]
+        {
+            // Send encrypted routing metadata
+            self.control_channel.send_encrypted_routing(&mut stream, target_host, target_port)?;
             
-            if total_read >= 4 && &response[total_read-4..total_read] == b"\r\n\r\n" {
-                break;
+            // Wait for control channel acknowledgment
+            if !self.control_channel.read_control_response(&mut stream)? {
+                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Control channel failed"));
             }
         }
         
-        let response_str = String::from_utf8_lossy(&response[..total_read]);
-        if !response_str.starts_with("HTTP/1.1 200") {
-            return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Relay CONNECT failed"));
+        #[cfg(not(feature = "encrypted_control"))]
+        {
+            // Fallback to standard CONNECT
+            let connect_request = format!("CONNECT {}:{} HTTP/1.1\r\n\r\n", target_host, target_port);
+            stream.write_all(connect_request.as_bytes())?;
+            stream.flush()?;
+            
+            let mut response = [0u8; 1024];
+            let mut total_read = 0;
+            
+            loop {
+                let bytes_read = stream.read(&mut response[total_read..])?;
+                if bytes_read == 0 {
+                    return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Relay closed connection"));
+                }
+                total_read += bytes_read;
+                
+                if total_read >= 4 && &response[total_read-4..total_read] == b"\r\n\r\n" {
+                    break;
+                }
+            }
+            
+            let response_str = String::from_utf8_lossy(&response[..total_read]);
+            if !response_str.starts_with("HTTP/1.1 200") {
+                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Relay CONNECT failed"));
+            }
         }
         
         Ok(stream)

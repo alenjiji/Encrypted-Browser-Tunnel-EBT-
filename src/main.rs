@@ -9,6 +9,8 @@ mod real_dns;
 mod tls_wrapper;
 mod dns_resolver;
 mod relay_transport;
+#[cfg(feature = "encrypted_control")]
+mod control_channel;
 #[cfg(feature = "async_tunnel")]
 mod async_tunnel;
 
