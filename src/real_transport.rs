@@ -4,7 +4,7 @@
 // This commit focuses on correct CONNECT semantics and capability gating.
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, Shutdown};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::transport::{EncryptedTransport, TransportError};
@@ -52,42 +52,53 @@ impl DirectTcpTunnelTransport {
             move || Self::forward_data(tcp, client)
         });
         
-        a.join().map_err(|_| TransportError::ConnectionFailed)
-            .and_then(|r| r)?;
-        b.join().map_err(|_| TransportError::ConnectionFailed)
-            .and_then(|r| r)?;
+        let _ = a.join();
+        let _ = b.join();
         
         Ok(())
     }
     
-    /// Forward data from source to destination with write_all + flush
-    fn forward_data<T: Read, U: Write>(source: Arc<Mutex<T>>, dest: Arc<Mutex<U>>) -> Result<(), TransportError> {
+    /// Forward data from source to destination with TCP half-close support
+    fn forward_data(source: Arc<Mutex<TcpStream>>, dest: Arc<Mutex<TcpStream>>) -> Result<(), TransportError> {
         let mut buffer = [0u8; 4096];
+        let mut write_closed = false;
         
         loop {
             let bytes_read = {
                 let mut src = source.lock().map_err(|_| TransportError::ConnectionFailed)?;
                 match src.read(&mut buffer) {
                     Ok(0) => {
-                        println!("Forward: EOF reached, closing connection");
-                        break; // EOF - clean break
+                        // EOF - perform half-close on destination write side only once
+                        if !write_closed {
+                            if let Ok(dst) = dest.lock() {
+                                let _ = dst.shutdown(Shutdown::Write);
+                                println!("Forward: EOF reached, shutdown write side");
+                            }
+                        }
+                        break; // Exit after EOF
                     }
                     Ok(n) => n,
                     Err(_) => {
                         println!("Forward: Read error, closing connection");
-                        break; // Error - clean break
+                        break;
                     }
                 }
             };
             
-            {
+            // Only write if we haven't closed the write side
+            if !write_closed {
                 let mut dst = dest.lock().map_err(|_| TransportError::ConnectionFailed)?;
-                dst.write_all(&buffer[..bytes_read])
-                    .map_err(|_| TransportError::ConnectionFailed)?;
-                dst.flush()
-                    .map_err(|_| TransportError::ConnectionFailed)?;
-                
-                println!("Forward: {} bytes transferred", bytes_read);
+                if let Err(_) = dst.write_all(&buffer[..bytes_read]) {
+                    // Write failed - shutdown and mark as closed
+                    let _ = dst.shutdown(Shutdown::Write);
+                    write_closed = true;
+                } else if let Err(_) = dst.flush() {
+                    // Flush failed - shutdown and mark as closed  
+                    let _ = dst.shutdown(Shutdown::Write);
+                    write_closed = true;
+                } else {
+                    println!("Forward: {} bytes transferred", bytes_read);
+                }
             }
         }
         
