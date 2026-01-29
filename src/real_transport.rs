@@ -14,6 +14,8 @@ use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
 #[cfg(feature = "single_hop_relay")]
 use crate::relay_transport::SingleHopRelayTransport;
+#[cfg(feature = "multi_hop_relay")]
+use crate::relay_transport::MultiHopRelayTransport;
 
 /// Real TCP transport implementation with direct connection
 pub struct DirectTcpTunnelTransport {
@@ -26,13 +28,20 @@ pub struct DirectTcpTunnelTransport {
 
 impl DirectTcpTunnelTransport {
     pub fn new(target_host: String, target_port: u16) -> Result<Self, TransportError> {
-        #[cfg(feature = "single_hop_relay")]
+        #[cfg(feature = "multi_hop_relay")]
+        let relay_transport: Box<dyn RelayTransport> = Box::new(MultiHopRelayTransport::new(vec![
+            ("relay1.example.com".to_string(), 8080),
+            ("relay2.example.com".to_string(), 8080),
+            ("relay3.example.com".to_string(), 8080),
+        ]));
+        
+        #[cfg(all(feature = "single_hop_relay", not(feature = "multi_hop_relay")))]
         let relay_transport: Box<dyn RelayTransport> = Box::new(SingleHopRelayTransport::new(
             "relay.example.com".to_string(),
             8080
         ));
         
-        #[cfg(not(feature = "single_hop_relay"))]
+        #[cfg(all(not(feature = "single_hop_relay"), not(feature = "multi_hop_relay")))]
         let relay_transport: Box<dyn RelayTransport> = Box::new(DirectRelayTransport::default());
         
         Ok(Self {

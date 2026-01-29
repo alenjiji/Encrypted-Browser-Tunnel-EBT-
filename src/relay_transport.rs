@@ -67,3 +67,68 @@ impl RelayTransport for SingleHopRelayTransport {
         Ok(relay_stream)
     }
 }
+
+#[cfg(feature = "multi_hop_relay")]
+pub struct MultiHopRelayTransport {
+    relay_chain: Vec<(String, u16)>,
+}
+
+#[cfg(feature = "multi_hop_relay")]
+impl MultiHopRelayTransport {
+    pub fn new(relay_chain: Vec<(String, u16)>) -> Self {
+        Self { relay_chain }
+    }
+}
+
+#[cfg(feature = "multi_hop_relay")]
+impl RelayTransport for MultiHopRelayTransport {
+    fn establish_relay_connection(&mut self, target_host: &str, target_port: u16) -> Result<TcpStream> {
+        if self.relay_chain.is_empty() {
+            return TcpStream::connect((target_host, target_port));
+        }
+        
+        // Connect to first relay
+        let (first_host, first_port) = &self.relay_chain[0];
+        let mut stream = TcpStream::connect((first_host, first_port))?;
+        
+        // Chain through each relay
+        for i in 1..self.relay_chain.len() {
+            let (next_host, next_port) = &self.relay_chain[i];
+            stream = Self::connect_through_relay(stream, next_host, *next_port)?;
+        }
+        
+        // Final connection to target
+        Self::connect_through_relay(stream, target_host, target_port)
+    }
+}
+
+#[cfg(feature = "multi_hop_relay")]
+impl MultiHopRelayTransport {
+    fn connect_through_relay(mut stream: TcpStream, target_host: &str, target_port: u16) -> Result<TcpStream> {
+        let connect_request = format!("CONNECT {}:{} HTTP/1.1\r\n\r\n", target_host, target_port);
+        stream.write_all(connect_request.as_bytes())?;
+        stream.flush()?;
+        
+        let mut response = [0u8; 1024];
+        let mut total_read = 0;
+        
+        loop {
+            let bytes_read = stream.read(&mut response[total_read..])?;
+            if bytes_read == 0 {
+                return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Relay closed connection"));
+            }
+            total_read += bytes_read;
+            
+            if total_read >= 4 && &response[total_read-4..total_read] == b"\r\n\r\n" {
+                break;
+            }
+        }
+        
+        let response_str = String::from_utf8_lossy(&response[..total_read]);
+        if !response_str.starts_with("HTTP/1.1 200") {
+            return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Relay CONNECT failed"));
+        }
+        
+        Ok(stream)
+    }
+}
