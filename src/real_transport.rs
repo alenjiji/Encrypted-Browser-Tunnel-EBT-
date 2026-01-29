@@ -4,18 +4,20 @@
 // This commit focuses on correct CONNECT semantics and capability gating.
 
 use std::io::{Read, Write};
-use std::net::{TcpStream, Shutdown};
+use std::net::{TcpStream, Shutdown, IpAddr};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::transport::{EncryptedTransport, TransportError};
+use crate::dns_resolver::{DnsResolver, DohResolver};
 
 /// Real TCP transport implementation with direct connection
 pub struct DirectTcpTunnelTransport {
     target_host: String,
     target_port: u16,
     tcp_stream: Option<Arc<Mutex<TcpStream>>>,
+    dns_resolver: DohResolver,
 }
 
 impl DirectTcpTunnelTransport {
@@ -24,6 +26,7 @@ impl DirectTcpTunnelTransport {
             target_host,
             target_port,
             tcp_stream: None,
+            dns_resolver: DohResolver::new(),
         })
     }
     
@@ -169,16 +172,36 @@ impl DirectTcpTunnelTransport {
 
 impl EncryptedTransport for DirectTcpTunnelTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
-        let tcp = TcpStream::connect((self.target_host.as_str(), self.target_port))
+        // Resolve hostname using DoH resolver (no plaintext DNS)
+        let ips = self.dns_resolver.resolve(&self.target_host)
             .map_err(|_| TransportError::ConnectionFailed)?;
         
-        println!("*** DIRECT TCP CONNECT TO {}:{} (NO SSH) ***", self.target_host, self.target_port);
+        let mut last_error = None;
         
-        tcp.set_nodelay(true).ok();
+        // Try each resolved IP address
+        for ip in ips {
+            match TcpStream::connect((ip, self.target_port)) {
+                Ok(tcp) => {
+                    println!("*** DIRECT TCP CONNECT TO {}:{} ({}:{}) (NO SSH) ***", 
+                             self.target_host, self.target_port, ip, self.target_port);
+                    
+                    tcp.set_nodelay(true).ok();
+                    
+                    self.tcp_stream = Some(Arc::new(Mutex::new(tcp)));
+                    println!("Direct TCP connection established to {}:{} via {}", 
+                             self.target_host, self.target_port, ip);
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
+                }
+            }
+        }
         
-        self.tcp_stream = Some(Arc::new(Mutex::new(tcp)));
-        println!("Direct TCP connection established to {}:{}", self.target_host, self.target_port);
-        Ok(())
+        eprintln!("Failed to connect to any resolved IP for {}: {:?}", 
+                  self.target_host, last_error);
+        Err(TransportError::ConnectionFailed)
     }
     
     async fn encrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
