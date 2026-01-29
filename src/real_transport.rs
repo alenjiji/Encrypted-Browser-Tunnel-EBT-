@@ -34,72 +34,55 @@ impl DirectTcpTunnelTransport {
     pub fn start_forwarding(&self, client_stream: TcpStream) -> Result<(), TransportError> {
         let tcp_stream = self.tcp_stream.as_ref()
             .ok_or(TransportError::ConnectionFailed)?
-            .clone();
+            .lock().map_err(|_| TransportError::ConnectionFailed)?
+            .try_clone().map_err(|_| TransportError::ConnectionFailed)?;
         
-        let client_stream = Arc::new(Mutex::new(client_stream));
+        // Clone streams for true full-duplex (no mutex)
+        let client_read = client_stream.try_clone().map_err(|_| TransportError::ConnectionFailed)?;
+        let client_write = client_stream;
         
-        // Set TCP_NODELAY on both streams
-        if let Ok(tcp) = tcp_stream.lock() {
-            tcp.set_nodelay(true).ok();
-        }
-        if let Ok(client) = client_stream.lock() {
-            client.set_nodelay(true).ok();
-        }
+        let tcp_read = tcp_stream.try_clone().map_err(|_| TransportError::ConnectionFailed)?;
+        let tcp_write = tcp_stream;
         
-        // client → TCP
-        let a = thread::spawn({
-            let tcp = Arc::clone(&tcp_stream);
-            let client = Arc::clone(&client_stream);
-            move || Self::forward_data(client, tcp)
-        });
+        // Set TCP_NODELAY on all streams
+        client_read.set_nodelay(true).ok();
+        client_write.set_nodelay(true).ok();
+        tcp_read.set_nodelay(true).ok();
+        tcp_write.set_nodelay(true).ok();
         
-        // TCP → client
-        let b = thread::spawn({
-            let tcp = Arc::clone(&tcp_stream);
-            let client = Arc::clone(&client_stream);
-            move || Self::forward_data(tcp, client)
-        });
+        // client → TCP (no mutex)
+        let a = thread::spawn(move || Self::forward_data_direct(client_read, tcp_write));
         
-        // Let threads run independently - don't wait for both
-        thread::spawn(move || {
-            let _ = a.join();
-            let _ = b.join();
-        });
+        // TCP → client (no mutex)
+        let b = thread::spawn(move || Self::forward_data_direct(tcp_read, client_write));
+        
+        // Block until both directions complete
+        let _ = a.join();
+        let _ = b.join();
         
         Ok(())
     }
     
-    /// Forward data from source to destination with TCP half-close support
-    fn forward_data(source: Arc<Mutex<TcpStream>>, dest: Arc<Mutex<TcpStream>>) -> Result<(), TransportError> {
-        let mut buffer = [0u8; 4096];
-        
+    /// Forward data directly between streams (no mutex)
+    fn forward_data_direct(mut src: TcpStream, mut dst: TcpStream) -> Result<(), TransportError> {
+        let mut buf = [0u8; 8192];
         loop {
-            let bytes_read = {
-                let mut src = source.lock().map_err(|_| TransportError::ConnectionFailed)?;
-                match src.read(&mut buffer) {
-                    Ok(0) => {
-                        // Peer closed its write side — this is NORMAL
-                        println!("Forward: EOF reached");
-                        return Ok(()); // exit THIS direction only
-                    }
-                    Ok(n) => {
-                        let mut dst = dest.lock().map_err(|_| TransportError::ConnectionFailed)?;
-                        if let Err(_) = dst.write_all(&buffer[..n]) {
-                            return Ok(());
-                        }
-                        n
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(_) => {
-                        // Non-fatal: exit this direction, do NOT kill tunnel
+            match src.read(&mut buf) {
+                Ok(0) => {
+                    return Ok(());
+                }
+                Ok(n) => {
+                    if let Err(_) = dst.write_all(&buf[..n]) {
                         return Ok(());
                     }
                 }
-            };
-            
-            println!("Forward: {} bytes transferred", bytes_read);
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(_) => {
+                    return Ok(());
+                }
+            }
         }
     }
 }
