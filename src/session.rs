@@ -2,6 +2,21 @@ use crate::client::{Client, ProxyConfig, ProxyType};
 use crate::proxy::ProxyRelay;
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns::{DnsResolver, DnsQuery, QueryType, ResolverType};
+use crate::config::{CapabilityPolicy, ExecutionMode, Capability};
+
+/// Error when required capability is not available
+#[derive(Debug)]
+pub struct CapabilityError {
+    pub required: Capability,
+}
+
+impl std::fmt::Display for CapabilityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Required capability {:?} not available", self.required)
+    }
+}
+
+impl std::error::Error for CapabilityError {}
 
 /// Transport enum to handle different transport types
 pub enum Transport {
@@ -42,10 +57,11 @@ pub struct TunnelSession {
     pub transport: Transport,
     pub proxy_relay: ProxyRelay,
     pub dns_resolver: DnsResolver,
+    pub capability_policy: CapabilityPolicy,
 }
 
 impl TunnelSession {
-    pub fn new(proxy_config: ProxyConfig) -> Self {
+    pub fn new(proxy_config: ProxyConfig, capability_policy: CapabilityPolicy) -> Self {
         println!("Creating TunnelSession with {:?}", proxy_config.proxy_type);
         
         let client = Client::new(proxy_config.clone());
@@ -69,6 +85,7 @@ impl TunnelSession {
             transport,
             proxy_relay,
             dns_resolver,
+            capability_policy,
         }
     }
     
@@ -127,6 +144,15 @@ impl TunnelSession {
         } else {
             println!("DNS configuration validated - no leaks detected");
             true
+        }
+    }
+    
+    /// Guard method to ensure required capability is available
+    pub fn ensure_capability(&self, capability: Capability) -> Result<(), CapabilityError> {
+        if self.capability_policy.allowed_capabilities.contains(&capability) {
+            Ok(())
+        } else {
+            Err(CapabilityError { required: capability })
         }
     }
 }

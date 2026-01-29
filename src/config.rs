@@ -1,6 +1,27 @@
 use std::time::Duration;
 use std::net::IpAddr;
 
+/// Execution mode controlling what the program is allowed to do
+#[derive(Debug, Clone)]
+pub enum ExecutionMode {
+    Conceptual,
+    RealNetwork,
+}
+
+/// System capabilities representing allowed operations
+#[derive(Debug, Clone, PartialEq)]
+pub enum Capability {
+    NoNetworking,
+    RealNetworking,
+}
+
+/// Policy binding execution mode to allowed capabilities
+#[derive(Debug, Clone)]
+pub struct CapabilityPolicy {
+    pub execution_mode: ExecutionMode,
+    pub allowed_capabilities: Vec<Capability>,
+}
+
 /// Top-level tunnel configuration for production deployment
 #[derive(Debug, Clone)]
 pub struct TunnelConfig {
