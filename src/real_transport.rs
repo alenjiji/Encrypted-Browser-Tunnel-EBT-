@@ -59,6 +59,9 @@ impl DirectTcpTunnelTransport {
             let target = tokio::net::TcpStream::from_std(tcp_stream)
                 .map_err(|_| TransportError::ConnectionFailed)?;
             
+            client.set_nodelay(true).ok();
+            target.set_nodelay(true).ok();
+            
             crate::async_tunnel::tunnel_connect(client, target).await
                 .map_err(|_| TransportError::ConnectionFailed)
         })
