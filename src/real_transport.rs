@@ -44,11 +44,22 @@ impl DirectTcpTunnelTransport {
         let tcp_read = tcp_stream.try_clone().map_err(|_| TransportError::ConnectionFailed)?;
         let tcp_write = tcp_stream;
         
-        // Set TCP_NODELAY on all streams
+        // Apply TCP socket tuning to all streams
         client_read.set_nodelay(true).ok();
+        client_read.set_read_timeout(None).ok();
+        client_read.set_write_timeout(None).ok();
+        
         client_write.set_nodelay(true).ok();
+        client_write.set_read_timeout(None).ok();
+        client_write.set_write_timeout(None).ok();
+        
         tcp_read.set_nodelay(true).ok();
+        tcp_read.set_read_timeout(None).ok();
+        tcp_read.set_write_timeout(None).ok();
+        
         tcp_write.set_nodelay(true).ok();
+        tcp_write.set_read_timeout(None).ok();
+        tcp_write.set_write_timeout(None).ok();
         
         // client → TCP (no mutex)
         let a = thread::spawn(move || Self::forward_data_direct(client_read, tcp_write));
@@ -69,6 +80,8 @@ impl DirectTcpTunnelTransport {
         loop {
             match src.read(&mut buf) {
                 Ok(0) => {
+                    // EOF reached - shutdown write side of destination
+                    let _ = dst.shutdown(std::net::Shutdown::Write);
                     return Ok(());
                 }
                 Ok(n) => {
