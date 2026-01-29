@@ -13,6 +13,7 @@ use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
 use crate::logging::LogLevel;
+use crate::log;
 #[cfg(feature = "single_hop_relay")]
 use crate::relay_transport::SingleHopRelayTransport;
 #[cfg(feature = "multi_hop_relay")]
