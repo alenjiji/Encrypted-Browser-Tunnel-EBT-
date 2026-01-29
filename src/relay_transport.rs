@@ -3,7 +3,7 @@ use std::io::{Result, Write, Read};
 #[cfg(feature = "encrypted_control")]
 use crate::control_channel::ControlChannel;
 
-pub trait RelayTransport {
+pub trait RelayTransport: Send {
     fn establish_relay_connection(&mut self, target_host: &str, target_port: u16) -> Result<TcpStream>;
 }
 
@@ -122,11 +122,12 @@ impl MultiHopRelayTransport {
             if !self.control_channel.read_control_response(&mut stream)? {
                 return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Control channel failed"));
             }
+            return Ok(stream);
         }
         
         #[cfg(not(feature = "encrypted_control"))]
         {
-            // Fallback to standard CONNECT
+            // Standard CONNECT
             let connect_request = format!("CONNECT {}:{} HTTP/1.1\r\n\r\n", target_host, target_port);
             stream.write_all(connect_request.as_bytes())?;
             stream.flush()?;
@@ -150,8 +151,8 @@ impl MultiHopRelayTransport {
             if !response_str.starts_with("HTTP/1.1 200") {
                 return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Relay CONNECT failed"));
             }
+            
+            return Ok(stream);
         }
-        
-        Ok(stream)
     }
 }

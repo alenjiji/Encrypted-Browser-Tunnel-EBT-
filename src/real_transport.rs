@@ -196,7 +196,7 @@ impl DirectTcpTunnelTransport {
 impl EncryptedTransport for DirectTcpTunnelTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
         // Resolve hostname using DoH resolver (no plaintext DNS)
-        let ips = self.dns_resolver.resolve(&self.target_host)
+        let ips = self.dns_resolver.resolve(&self.target_host).await
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         let mut last_error = None;
