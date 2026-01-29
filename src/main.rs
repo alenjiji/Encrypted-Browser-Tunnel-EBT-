@@ -15,7 +15,7 @@ mod test_transport;
 use std::error::Error;
 use client::{ProxyConfig, ProxyType};
 use session::TunnelSession;
-use config::{CapabilityPolicy, ExecutionMode, Capability};
+use config::{CapabilityPolicy, ExecutionMode, Capability, ProxyPolicy, ProxyMode};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -30,8 +30,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     
     let capability_policy = CapabilityPolicy {
-        execution_mode: ExecutionMode::Conceptual,
-        allowed_capabilities: vec![Capability::NoNetworking],
+        execution_mode: ExecutionMode::RealNetwork,
+        allowed_capabilities: vec![Capability::RealNetworking],
     };
     
     let mut session = TunnelSession::new(config, capability_policy);
@@ -39,13 +39,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Establish tunnel
     session.establish_tunnel().await?;
     
-    // Validate DNS configuration
-    session.validate_dns_configuration();
+    // Start real proxy server
+    let proxy_policy = ProxyPolicy {
+        mode: ProxyMode::Application,
+        bind_address: "127.0.0.1".to_string(),
+        bind_port: 8080,
+        authentication: None,
+    };
     
-    // Process a sample request
-    let sample_request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let _response = session.process_request("example.com", sample_request).await?;
+    println!("\n=== Starting Real Network Mode ===");
+    session.start_real_proxy(&proxy_policy)?;
     
-    println!("\nEducational demonstration complete");
+    // Start accepting connections
+    let mut real_proxy = crate::real_proxy::RealProxyServer::new(proxy_policy.clone());
+    real_proxy.bind()?;
+    
+    println!("\nReal proxy server ready!");
+    println!("Configure your browser to use proxy: 127.0.0.1:8080");
+    println!("Press Ctrl+C to stop the server");
+    
+    // Accept connections
+    real_proxy.accept_connections().await?;
     Ok(())
 }

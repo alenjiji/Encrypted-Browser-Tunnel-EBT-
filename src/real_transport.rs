@@ -5,6 +5,8 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::tls_wrapper::{TlsWrapper, TlsStream};
 
@@ -15,7 +17,7 @@ pub struct RealHttpsConnectTransport {
     target_host: String,
     target_port: u16,
     tls_wrapper: TlsWrapper,
-    tls_stream: Option<TlsStream>,
+    tls_stream: Option<Arc<Mutex<TlsStream>>>,
 }
 
 impl RealHttpsConnectTransport {
@@ -29,6 +31,11 @@ impl RealHttpsConnectTransport {
             tls_wrapper,
             tls_stream: None,
         })
+    }
+    
+    /// Get the established TLS stream for forwarding
+    pub fn get_tls_stream(&self) -> Option<Arc<Mutex<TlsStream>>> {
+        self.tls_stream.clone()
     }
 }
 
@@ -78,7 +85,7 @@ impl EncryptedTransport for RealHttpsConnectTransport {
             .map_err(|_| TransportError::ConnectionFailed)??
         };
         
-        self.tls_stream = Some(tls_stream);
+        self.tls_stream = Some(Arc::new(Mutex::new(tls_stream)));
         println!("HTTPS CONNECT tunnel established, TLS handshake completed to {}:{}", self.target_host, self.target_port);
         Ok(())
     }

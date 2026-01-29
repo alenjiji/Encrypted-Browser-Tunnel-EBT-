@@ -1,5 +1,6 @@
 use std::net::TcpStream;
 use std::sync::Arc;
+use std::io::{Read, Write};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_native_certs;
 use tokio_rustls::TlsConnector;
@@ -64,6 +65,22 @@ impl TlsWrapper {
 /// TLS-wrapped stream for secure communication
 pub struct TlsStream {
     inner: StreamOwned<ClientConnection, TcpStream>,
+}
+
+impl Read for TlsStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Write for TlsStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.write(buf)
+    }
+    
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 impl TlsStream {

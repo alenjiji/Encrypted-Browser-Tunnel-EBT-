@@ -4,6 +4,8 @@
 
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use crate::config::ProxyPolicy;
 use tokio::task;
 
@@ -65,11 +67,43 @@ impl RealProxyServer {
         
         println!("Real proxy received request: {}", request.lines().next().unwrap_or(""));
         
-        // Send simple HTTP response
-        let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nProxy Working";
-        stream.write_all(response.as_bytes())?;
+        if request.starts_with("CONNECT ") {
+            // Handle CONNECT request for HTTPS tunneling
+            let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
+            stream.write_all(response.as_bytes())?;
+            stream.flush()?;
+            
+            println!("CONNECT tunnel established, starting encrypted forwarding");
+            
+            // TODO: Get TLS stream from transport and start bidirectional forwarding
+            // For now, just echo data back
+            Self::echo_data(stream)?;
+        } else {
+            // Handle regular HTTP request
+            let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nProxy Working";
+            stream.write_all(response.as_bytes())?;
+            println!("Real proxy sent response");
+        }
         
-        println!("Real proxy sent response");
+        Ok(())
+    }
+    
+    /// Echo data for testing (placeholder for real forwarding)
+    fn echo_data(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+        let mut buffer = [0u8; 4096];
+        
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    // Echo back for testing
+                    stream.write_all(&buffer[..n])?;
+                    stream.flush()?;
+                }
+                Err(_) => break,
+            }
+        }
+        
         Ok(())
     }
 }
