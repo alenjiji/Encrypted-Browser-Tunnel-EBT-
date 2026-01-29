@@ -4,6 +4,9 @@ mod transport;
 mod dns;
 mod session;
 mod config;
+mod real_transport;
+mod real_proxy;
+mod real_dns;
 
 #[cfg(test)]
 mod test_transport;
@@ -11,6 +14,7 @@ mod test_transport;
 use std::error::Error;
 use client::{ProxyConfig, ProxyType};
 use session::TunnelSession;
+use config::{CapabilityPolicy, ExecutionMode, Capability};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -24,7 +28,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         port: 22,
     };
     
-    let session = TunnelSession::new(config);
+    let capability_policy = CapabilityPolicy {
+        execution_mode: ExecutionMode::Conceptual,
+        allowed_capabilities: vec![Capability::NoNetworking],
+    };
+    
+    let session = TunnelSession::new(config, capability_policy);
     
     // Establish tunnel
     session.establish_tunnel().await?;

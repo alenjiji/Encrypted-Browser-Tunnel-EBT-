@@ -2,7 +2,10 @@ use crate::client::{Client, ProxyConfig, ProxyType};
 use crate::proxy::ProxyRelay;
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns::{DnsResolver, DnsQuery, QueryType, ResolverType};
-use crate::config::{CapabilityPolicy, ExecutionMode, Capability};
+use crate::config::{CapabilityPolicy, ExecutionMode, Capability, TransportConfig, TransportKind, ProxyPolicy, DnsPolicy};
+use crate::real_transport::RealHttpsConnectTransport;
+use crate::real_proxy::RealProxyServer;
+use crate::real_dns::RealDnsResolver;
 
 /// Error when required capability is not available
 #[derive(Debug)]
@@ -73,12 +76,12 @@ impl TunnelSession {
         };
         
         let proxy_relay = ProxyRelay::new(
-            "0.0.0.0".to_string(),
+            "proxy-bind.placeholder".to_string(),
             8080,
-            "8.8.8.8".to_string()
+            "relay-dns.example".to_string()
         );
         
-        let dns_resolver = DnsResolver::new_remote("8.8.8.8".to_string());
+        let dns_resolver = DnsResolver::new_remote("relay-dns.example".to_string());
         
         Self {
             client,
@@ -147,6 +150,89 @@ impl TunnelSession {
         }
     }
     
+    /// Establish real network connection using TransportConfig
+    pub async fn establish_real_connection_with_config(&self, transport_config: &TransportConfig) -> Result<(), Box<dyn std::error::Error>> {
+        // Guard: Ensure ExecutionMode is RealNetwork
+        if !matches!(self.capability_policy.execution_mode, ExecutionMode::RealNetwork) {
+            return Err(Box::new(CapabilityError { required: Capability::RealNetworking }));
+        }
+        
+        // Guard: Ensure RealNetworking capability is available
+        self.ensure_capability(Capability::RealNetworking)?;
+        
+        println!("=== Establishing Real Network Connection with Config ===");
+        
+        // Select real transport based on TransportKind
+        match transport_config.kind {
+            TransportKind::Tls => {
+                let real_transport = RealHttpsConnectTransport::new(
+                    transport_config.remote_address.clone(),
+                    transport_config.remote_port,
+                    "target.example.com".to_string(),
+                    443
+                );
+                real_transport.establish_connection().await?;
+            }
+            TransportKind::Ssh => {
+                return Err("SSH transport not implemented for real networking".into());
+            }
+            TransportKind::Quic => {
+                return Err("QUIC transport not implemented for real networking".into());
+            }
+        }
+        
+        println!("=== Real Network Connection Established ===");
+        Ok(())
+    }
+    
+    /// Start real proxy server when capability allows
+    pub fn start_real_proxy(&self, proxy_policy: &ProxyPolicy) -> Result<(), Box<dyn std::error::Error>> {
+        // Guard: Ensure ExecutionMode is RealNetwork
+        if !matches!(self.capability_policy.execution_mode, ExecutionMode::RealNetwork) {
+            return Err(Box::new(CapabilityError { required: Capability::RealNetworking }));
+        }
+        
+        // Guard: Ensure RealNetworking capability is available
+        self.ensure_capability(Capability::RealNetworking)?;
+        
+        println!("=== Starting Real Proxy Server ===");
+        
+        let mut real_proxy = RealProxyServer::new(proxy_policy.clone());
+        real_proxy.bind()?;
+        
+        println!("Real proxy server ready for browser connections");
+        println!("Configure browser to use proxy: {}:{}", proxy_policy.bind_address, proxy_policy.bind_port);
+        
+        Ok(())
+    }
+    
+    /// Resolve DNS with policy enforcement when capability allows
+    pub async fn resolve_dns_with_policy(&self, dns_policy: &DnsPolicy, domain: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Guard: Ensure ExecutionMode is RealNetwork
+        if !matches!(self.capability_policy.execution_mode, ExecutionMode::RealNetwork) {
+            return Err(Box::new(CapabilityError { required: Capability::RealNetworking }));
+        }
+        
+        // Guard: Ensure RealNetworking capability is available
+        self.ensure_capability(Capability::RealNetworking)?;
+        
+        println!("=== Resolving DNS with Policy Enforcement ===");
+        
+        let real_dns = RealDnsResolver::new(dns_policy.clone());
+        let query = DnsQuery {
+            domain: domain.to_string(),
+            query_type: QueryType::A,
+        };
+        
+        let response = real_dns.resolve_with_policy(query).await?;
+        real_dns.validate_resolution(&response)?;
+        
+        println!("DNS resolved: {} -> {:?} (via {:?})", 
+                response.domain, response.ip_address, response.resolved_via);
+        
+        Ok(())
+    }
+    
     /// Guard method to ensure required capability is available
     pub fn ensure_capability(&self, capability: Capability) -> Result<(), CapabilityError> {
         if self.capability_policy.allowed_capabilities.contains(&capability) {
@@ -183,7 +269,11 @@ mod tests {
         };
         
         // Act: Demonstrate session creation and tunnel establishment flow
-        let session = TunnelSession::new(config);
+        let capability_policy = CapabilityPolicy {
+            execution_mode: ExecutionMode::Conceptual,
+            allowed_capabilities: vec![Capability::NoNetworking],
+        };
+        let session = TunnelSession::new(config, capability_policy);
         let result = session.establish_tunnel().await;
         
         // Assert: Verify architectural components integrate successfully
@@ -241,17 +331,23 @@ mod tests {
             22
         ));
         let proxy_relay = ProxyRelay::new(
-            "0.0.0.0".to_string(),
+            "proxy-bind.placeholder".to_string(),
             8080,
-            "8.8.8.8".to_string()
+            "relay-dns.example".to_string()
         );
-        let dns_resolver = DnsResolver::new_remote("8.8.8.8".to_string());
+        let dns_resolver = DnsResolver::new_remote("relay-dns.example".to_string());
+        
+        let capability_policy = CapabilityPolicy {
+            execution_mode: ExecutionMode::Conceptual,
+            allowed_capabilities: vec![Capability::NoNetworking],
+        };
         
         let session = TunnelSession {
             client,
             transport,
             proxy_relay,
             dns_resolver,
+            capability_policy,
         };
         
         // Act: Demonstrate successful establishment (educational placeholder)
