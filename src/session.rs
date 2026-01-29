@@ -29,7 +29,7 @@ pub enum Transport {
 }
 
 impl Transport {
-    pub async fn establish_connection(&self) -> Result<(), TransportError> {
+    pub async fn establish_connection(&mut self) -> Result<(), TransportError> {
         match self {
             Transport::Ssh(t) => t.establish_connection().await,
             Transport::Tls(t) => t.establish_connection().await,
@@ -92,7 +92,7 @@ impl TunnelSession {
         }
     }
     
-    pub async fn establish_tunnel(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn establish_tunnel(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         println!("=== Establishing Tunnel Session ===");
         
         // Step 1: Client initiates connection
@@ -165,12 +165,12 @@ impl TunnelSession {
         // Select real transport based on TransportKind
         match transport_config.kind {
             TransportKind::Tls => {
-                let real_transport = RealHttpsConnectTransport::new(
-                    transport_config.remote_address.clone(),
-                    transport_config.remote_port,
-                    "target.example.com".to_string(),
-                    443
-                );
+                let mut real_transport = RealHttpsConnectTransport::new(
+                    transport_config.proxy_host.clone(),
+                    transport_config.proxy_port,
+                    transport_config.target_host.clone(),
+                    transport_config.target_port
+                )?;
                 real_transport.establish_connection().await?;
             }
             TransportKind::Ssh => {
@@ -273,7 +273,7 @@ mod tests {
             execution_mode: ExecutionMode::Conceptual,
             allowed_capabilities: vec![Capability::NoNetworking],
         };
-        let session = TunnelSession::new(config, capability_policy);
+        let mut session = TunnelSession::new(config, capability_policy);
         let result = session.establish_tunnel().await;
         
         // Assert: Verify architectural components integrate successfully

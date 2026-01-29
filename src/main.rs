@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         allowed_capabilities: vec![Capability::NoNetworking],
     };
     
-    let session = TunnelSession::new(config, capability_policy);
+    let mut session = TunnelSession::new(config, capability_policy);
     
     // Establish tunnel
     session.establish_tunnel().await?;

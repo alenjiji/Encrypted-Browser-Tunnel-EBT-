@@ -36,8 +36,10 @@ impl TunnelConfig {
         Self {
             transport: TransportConfig {
                 kind: TransportKind::Ssh,
-                remote_address: "relay.example.com".to_string(),
-                remote_port: 22,
+                proxy_host: "relay.example.com".to_string(),
+                proxy_port: 22,
+                target_host: "target.example.com".to_string(),
+                target_port: 443,
             },
             dns_policy: DnsPolicy {
                 resolution_location: ResolutionLocation::Remote,
@@ -57,8 +59,14 @@ impl TunnelConfig {
 #[derive(Debug, Clone)]
 pub struct TransportConfig {
     pub kind: TransportKind,
-    pub remote_address: String,
-    pub remote_port: u16,
+    
+    // proxy endpoint
+    pub proxy_host: String,
+    pub proxy_port: u16,
+    
+    // target endpoint
+    pub target_host: String,
+    pub target_port: u16,
 }
 
 /// Transport kinds matching existing Transport enum variants

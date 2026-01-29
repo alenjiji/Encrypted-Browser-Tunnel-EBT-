@@ -1,6 +1,6 @@
 /// Transport layer encryption abstraction
 pub trait EncryptedTransport {
-    async fn establish_connection(&self) -> Result<(), TransportError>;
+    async fn establish_connection(&mut self) -> Result<(), TransportError>;
     async fn encrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError>;
     async fn decrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError>;
 }
@@ -37,7 +37,7 @@ impl SshTransport {
 }
 
 impl EncryptedTransport for SshTransport {
-    async fn establish_connection(&self) -> Result<(), TransportError> {
+    async fn establish_connection(&mut self) -> Result<(), TransportError> {
         println!("Establishing SSH connection to {}:{}", self.host, self.port);
         Ok(())
     }
@@ -66,7 +66,7 @@ impl TlsTransport {
 }
 
 impl EncryptedTransport for TlsTransport {
-    async fn establish_connection(&self) -> Result<(), TransportError> {
+    async fn establish_connection(&mut self) -> Result<(), TransportError> {
         println!("Establishing TLS connection to {}:{}", self.host, self.port);
         Ok(())
     }
@@ -95,7 +95,7 @@ impl QuicTransport {
 }
 
 impl EncryptedTransport for QuicTransport {
-    async fn establish_connection(&self) -> Result<(), TransportError> {
+    async fn establish_connection(&mut self) -> Result<(), TransportError> {
         println!("Establishing QUIC connection to {}:{}", self.host, self.port);
         Ok(())
     }

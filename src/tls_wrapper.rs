@@ -5,6 +5,7 @@ use rustls_native_certs;
 use tokio_rustls::TlsConnector;
 
 /// TLS wrapper for client-side connections using rustls
+#[derive(Clone)]
 pub struct TlsWrapper {
     config: Arc<ClientConfig>,
 }
@@ -34,6 +35,19 @@ impl TlsWrapper {
     pub fn wrap_stream(&self, stream: TcpStream, server_name: &str) -> Result<TlsStream, Box<dyn std::error::Error>> {
         let server_name = server_name.try_into()?;
         let conn = ClientConnection::new(self.config.clone(), server_name)?;
+        let tls_stream = StreamOwned::new(conn, stream);
+        
+        Ok(TlsStream {
+            inner: tls_stream,
+        })
+    }
+    
+    /// Wrap a TcpStream with TLS synchronously
+    pub fn wrap_stream_sync(&self, stream: std::net::TcpStream, server_name: &str) -> std::io::Result<TlsStream> {
+        let server_name = server_name.try_into()
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid server name"))?;
+        let conn = ClientConnection::new(self.config.clone(), server_name)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let tls_stream = StreamOwned::new(conn, stream);
         
         Ok(TlsStream {
