@@ -60,8 +60,11 @@ impl DirectTcpTunnelTransport {
             move || Self::forward_data(tcp, client)
         });
         
-        let _ = a.join();
-        let _ = b.join();
+        // Let threads run independently - don't wait for both
+        thread::spawn(move || {
+            let _ = a.join();
+            let _ = b.join();
+        });
         
         Ok(())
     }
@@ -69,52 +72,48 @@ impl DirectTcpTunnelTransport {
     /// Forward data from source to destination with TCP half-close support
     fn forward_data(source: Arc<Mutex<TcpStream>>, dest: Arc<Mutex<TcpStream>>) -> Result<(), TransportError> {
         let mut buffer = [0u8; 4096];
-        let mut write_closed = false;
         
         loop {
             let bytes_read = {
                 let mut src = source.lock().map_err(|_| TransportError::ConnectionFailed)?;
                 match src.read(&mut buffer) {
                     Ok(0) => {
-                        // EOF - no shutdown needed
-                        if !write_closed {
-                            println!("Forward: EOF reached");
-                        }
-                        break; // Exit after EOF
+                        // Peer closed its write side — this is NORMAL
+                        println!("Forward: EOF reached");
+                        return Ok(()); // exit THIS direction only
                     }
-                    Ok(n) => n,
+                    Ok(n) => {
+                        let mut dst = dest.lock().map_err(|_| TransportError::ConnectionFailed)?;
+                        if let Err(_) = dst.write_all(&buffer[..n]) {
+                            return Ok(());
+                        }
+                        n
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
                     Err(_) => {
-                        println!("Forward: Read error, closing connection");
-                        break;
+                        // Non-fatal: exit this direction, do NOT kill tunnel
+                        return Ok(());
                     }
                 }
             };
             
-            // Only write if we haven't closed the write side
-            if !write_closed {
-                let mut dst = dest.lock().map_err(|_| TransportError::ConnectionFailed)?;
-                if let Err(_) = dst.write_all(&buffer[..bytes_read]) {
-                    // Write failed - mark as closed
-                    write_closed = true;
-                } else if let Err(_) = dst.flush() {
-                    // Flush failed - mark as closed  
-                    write_closed = true;
-                } else {
-                    println!("Forward: {} bytes transferred", bytes_read);
-                }
-            }
+            println!("Forward: {} bytes transferred", bytes_read);
         }
-        
-        Ok(())
     }
 }
 
 impl EncryptedTransport for DirectTcpTunnelTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
-        let stream = TcpStream::connect(format!("{}:{}", self.target_host, self.target_port))
+        let tcp = TcpStream::connect((self.target_host.as_str(), self.target_port))
             .map_err(|_| TransportError::ConnectionFailed)?;
         
-        self.tcp_stream = Some(Arc::new(Mutex::new(stream)));
+        println!("*** DIRECT TCP CONNECT TO {}:{} (NO SSH) ***", self.target_host, self.target_port);
+        
+        tcp.set_nodelay(true).ok();
+        
+        self.tcp_stream = Some(Arc::new(Mutex::new(tcp)));
         println!("Direct TCP connection established to {}:{}", self.target_host, self.target_port);
         Ok(())
     }

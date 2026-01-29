@@ -45,6 +45,7 @@ impl RealProxyServer {
             loop {
                 // Handle each connection in a separate task
                 let (stream, addr) = listener.accept()?;
+                stream.set_nodelay(true).ok();
                 println!("Real proxy accepted connection from {}", addr);
                 
                 task::spawn(async move {

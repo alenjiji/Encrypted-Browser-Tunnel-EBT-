@@ -15,25 +15,25 @@ use config::{CapabilityPolicy, ExecutionMode, Capability, ProxyPolicy, ProxyMode
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Encrypted Browser Tunnel (Educational)");
-    println!("Demonstrating conceptual architecture flow\n");
+    println!("=== DIRECT CONNECT MODE (NO SSH) ===");
     
+    // TEMPORARILY DISABLED FOR CONNECT DEBUGGING:
     // Create tunnel session with SSH SOCKS configuration
-    let config = ProxyConfig {
-        proxy_type: ProxyType::SshSocks,
-        address: "relay.example.com".to_string(),
-        port: 22,
-    };
-    
-    let capability_policy = CapabilityPolicy {
-        execution_mode: ExecutionMode::RealNetwork,
-        allowed_capabilities: vec![Capability::RealNetworking],
-    };
-    
-    let mut session = TunnelSession::new(config, capability_policy);
-    
-    // Establish tunnel
-    session.establish_tunnel().await?;
+    // let config = ProxyConfig {
+    //     proxy_type: ProxyType::SshSocks,
+    //     address: "relay.example.com".to_string(),
+    //     port: 22,
+    // };
+    // 
+    // let capability_policy = CapabilityPolicy {
+    //     execution_mode: ExecutionMode::RealNetwork,
+    //     allowed_capabilities: vec![Capability::RealNetworking],
+    // };
+    // 
+    // let mut session = TunnelSession::new(config, capability_policy);
+    // 
+    // // Establish tunnel
+    // session.establish_tunnel().await?;
     
     // Start real proxy server
     let proxy_policy = ProxyPolicy {
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     
     println!("\n=== Starting Real Network Mode ===");
-    session.start_real_proxy(&proxy_policy)?;
+    // session.start_real_proxy(&proxy_policy)?;
     
     // Start accepting connections
     let mut real_proxy = crate::real_proxy::RealProxyServer::new(proxy_policy.clone());
