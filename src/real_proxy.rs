@@ -12,6 +12,11 @@ use crate::transport::EncryptedTransport;
 use crate::logging::LogLevel;
 use crate::log;
 use tokio::task;
+use tokio::sync::Semaphore;
+
+lazy_static::lazy_static! {
+    static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(256));
+}
 
 /// Real proxy server that binds to network interfaces
 pub struct RealProxyServer {
@@ -50,9 +55,16 @@ impl RealProxyServer {
                 stream.set_nodelay(true).ok();
                 
                 task::spawn(async move {
+                    let permit = match TUNNEL_SEMAPHORE.clone().acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => return,
+                    };
+                    
                     if let Err(e) = Self::handle_connection(stream).await {
                         log!(LogLevel::Error, "Error handling connection: {}", e);
                     }
+                    
+                    drop(permit);
                 });
             }
         } else {
