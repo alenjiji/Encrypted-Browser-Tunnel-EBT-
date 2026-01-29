@@ -65,7 +65,7 @@ impl DirectTcpTunnelTransport {
     
     /// Forward data directly between streams (no mutex)
     fn forward_data_direct(mut src: TcpStream, mut dst: TcpStream) -> Result<(), TransportError> {
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; 65536]; // 64KB buffer
         loop {
             match src.read(&mut buf) {
                 Ok(0) => {
