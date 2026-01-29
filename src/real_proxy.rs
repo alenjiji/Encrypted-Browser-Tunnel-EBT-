@@ -4,9 +4,9 @@
 
 use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
-use std::thread;
 use crate::config::ProxyPolicy;
+use crate::real_transport::DirectTcpTunnelTransport;
+use crate::transport::EncryptedTransport;
 use tokio::task;
 
 /// Real proxy server that binds to network interfaces
@@ -41,14 +41,12 @@ impl RealProxyServer {
             println!("Real proxy waiting for connections...");
             
             loop {
+                // Handle each connection in a separate task
                 let (stream, addr) = listener.accept()?;
                 println!("Real proxy accepted connection from {}", addr);
                 
-                // Handle each connection in a separate task
-                // Using spawn_blocking because TcpStream uses blocking I/O.
-                // Async I/O can be introduced later without changing proxy semantics.
-                task::spawn_blocking(move || {
-                    if let Err(e) = Self::handle_connection(stream) {
+                task::spawn(async move {
+                    if let Err(e) = Self::handle_connection(stream).await {
                         eprintln!("Error handling connection: {}", e);
                     }
                 });
@@ -59,7 +57,7 @@ impl RealProxyServer {
     }
     
     /// Handle a single client connection
-    fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
         // Read HTTP request
         let mut buffer = [0; 1024];
         let bytes_read = stream.read(&mut buffer)?;
@@ -68,40 +66,48 @@ impl RealProxyServer {
         println!("Real proxy received request: {}", request.lines().next().unwrap_or(""));
         
         if request.starts_with("CONNECT ") {
+            // Parse CONNECT target from request line
+            let first_line = request.lines().next().unwrap_or("");
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            let (host, port) = if parts.len() >= 2 {
+                let target = parts[1];
+                if let Some(colon_pos) = target.rfind(':') {
+                    let host = target[..colon_pos].to_string();
+                    let port = target[colon_pos + 1..].parse::<u16>().unwrap_or(443);
+                    (host, port)
+                } else {
+                    (target.to_string(), 443u16)
+                }
+            } else {
+                ("unknown".to_string(), 443u16)
+            };
+            
             // Handle CONNECT request for HTTPS tunneling
             let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
             stream.write_all(response.as_bytes())?;
             stream.flush()?;
             
-            println!("CONNECT tunnel established, starting encrypted forwarding");
+            println!("CONNECT accepted, delegating to encrypted transport");
             
-            // TODO: Get TLS stream from transport and start bidirectional forwarding
-            // For now, just echo data back
-            Self::echo_data(stream)?;
-        } else {
-            // Handle regular HTTP request
-            let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nProxy Working";
-            stream.write_all(response.as_bytes())?;
-            println!("Real proxy sent response");
-        }
-        
-        Ok(())
-    }
-    
-    /// Echo data for testing (placeholder for real forwarding)
-    fn echo_data(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-        let mut buffer = [0u8; 4096];
-        
-        loop {
-            match stream.read(&mut buffer) {
-                Ok(0) => break, // EOF
-                Ok(n) => {
-                    // Echo back for testing
-                    stream.write_all(&buffer[..n])?;
-                    stream.flush()?;
-                }
-                Err(_) => break,
+            // Create transport for this specific CONNECT target
+            let mut transport = DirectTcpTunnelTransport::new(
+                host.clone(),
+                port
+            )?;
+            
+            // Establish connection to target
+            if let Err(e) = transport.establish_connection().await {
+                eprintln!("Failed to establish connection to {}:{} - {}", host, port, e);
+                return Err(e.into());
             }
+            
+            // Start encrypted forwarding using transport
+            transport.start_forwarding(stream)?;
+        } else {
+            // Reject non-CONNECT requests
+            let response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
+            stream.write_all(response.as_bytes())?;
+            stream.flush()?;
         }
         
         Ok(())

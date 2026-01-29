@@ -1,5 +1,4 @@
 mod client;
-mod proxy;
 mod transport;
 mod dns;
 mod session;
@@ -8,9 +7,6 @@ mod real_transport;
 mod real_proxy;
 mod real_dns;
 mod tls_wrapper;
-
-#[cfg(test)]
-mod test_transport;
 
 use std::error::Error;
 use client::{ProxyConfig, ProxyType};

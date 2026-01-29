@@ -1,9 +1,8 @@
 use crate::client::{Client, ProxyConfig, ProxyType};
-use crate::proxy::ProxyRelay;
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns::{DnsResolver, DnsQuery, QueryType, ResolverType};
 use crate::config::{CapabilityPolicy, ExecutionMode, Capability, TransportConfig, TransportKind, ProxyPolicy, DnsPolicy};
-use crate::real_transport::RealHttpsConnectTransport;
+use crate::real_transport::DirectTcpTunnelTransport;
 use crate::real_proxy::RealProxyServer;
 use crate::real_dns::RealDnsResolver;
 
@@ -58,7 +57,6 @@ impl Transport {
 pub struct TunnelSession {
     pub client: Client,
     pub transport: Transport,
-    pub proxy_relay: ProxyRelay,
     pub dns_resolver: DnsResolver,
     pub capability_policy: CapabilityPolicy,
 }
@@ -75,18 +73,11 @@ impl TunnelSession {
             ProxyType::QuicHttp3 => Transport::Quic(crate::transport::QuicTransport::new(proxy_config.address.clone(), proxy_config.port)),
         };
         
-        let proxy_relay = ProxyRelay::new(
-            "proxy-bind.placeholder".to_string(),
-            8080,
-            "relay-dns.example".to_string()
-        );
-        
         let dns_resolver = DnsResolver::new_remote("relay-dns.example".to_string());
         
         Self {
             client,
             transport,
-            proxy_relay,
             dns_resolver,
             capability_policy,
         }
@@ -102,10 +93,6 @@ impl TunnelSession {
         // Step 2: Establish encrypted transport
         println!("Step 2: Encrypted transport establishment");
         self.transport.establish_connection().await?;
-        
-        // Step 3: Proxy relay startup
-        println!("Step 3: Proxy relay initialization");
-        self.proxy_relay.start().await?;
         
         println!("=== Tunnel Session Established ===");
         Ok(())
@@ -126,13 +113,9 @@ impl TunnelSession {
         println!("Step 2: Encrypting request data");
         let encrypted_data = self.transport.encrypt_data(request_data).await?;
         
-        // Step 3: Forward through proxy relay
-        println!("Step 3: Forwarding via proxy relay");
-        let relay_response = self.proxy_relay.forward_request(&encrypted_data).await?;
-        
-        // Step 4: Decrypt response data
-        println!("Step 4: Decrypting response data");
-        let decrypted_response = self.transport.decrypt_data(&relay_response).await?;
+        // Step 3: Decrypt response data
+        println!("Step 3: Decrypting response data");
+        let decrypted_response = self.transport.decrypt_data(&encrypted_data).await?;
         
         println!("=== Request Processing Complete ===");
         Ok(decrypted_response)
@@ -165,9 +148,7 @@ impl TunnelSession {
         // Select real transport based on TransportKind
         match transport_config.kind {
             TransportKind::Tls => {
-                let mut real_transport = RealHttpsConnectTransport::new(
-                    transport_config.proxy_host.clone(),
-                    transport_config.proxy_port,
+                let mut real_transport = DirectTcpTunnelTransport::new(
                     transport_config.target_host.clone(),
                     transport_config.target_port
                 )?;
@@ -330,11 +311,6 @@ mod tests {
             "educational-success.example.com".to_string(),
             22
         ));
-        let proxy_relay = ProxyRelay::new(
-            "proxy-bind.placeholder".to_string(),
-            8080,
-            "relay-dns.example".to_string()
-        );
         let dns_resolver = DnsResolver::new_remote("relay-dns.example".to_string());
         
         let capability_policy = CapabilityPolicy {
@@ -345,7 +321,6 @@ mod tests {
         let session = TunnelSession {
             client,
             transport,
-            proxy_relay,
             dns_resolver,
             capability_policy,
         };
