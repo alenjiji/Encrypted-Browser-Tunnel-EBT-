@@ -1,10 +1,8 @@
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{timeout, Duration};
 use std::io::Result;
 
 const BUFFER_SIZE: usize = 65536; // 64KB
-const IDLE_TIMEOUT_SECS: u64 = 60;
 
 pub async fn tunnel_connect(mut client: TcpStream, mut target: TcpStream) -> Result<()> {
     let (mut client_read, mut client_write) = client.split();
@@ -48,18 +46,9 @@ pub async fn tunnel_connect(mut client: TcpStream, mut target: TcpStream) -> Res
         }
     };
     
-    let forward_result = tokio::select! {
+    tokio::select! {
         _ = client_to_target => {},
         _ = target_to_client => {},
-    };
-    
-    let result = timeout(
-        Duration::from_secs(IDLE_TIMEOUT_SECS),
-        async { forward_result }
-    ).await;
-    
-    if result.is_err() {
-        // Idle/hung tunnel - timeout occurred
     }
     
     Ok(())

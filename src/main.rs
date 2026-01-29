@@ -11,6 +11,11 @@ mod dns_resolver;
 mod relay_transport;
 mod logging;
 mod tunnel_stats;
+mod threat_invariants;
+mod attack_surfaces;
+mod trust_boundaries;
+mod prohibited_capabilities;
+mod threat_model_tests;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
