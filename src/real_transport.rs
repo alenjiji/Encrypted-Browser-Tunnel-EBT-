@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
+#[cfg(feature = "single_hop_relay")]
+use crate::relay_transport::SingleHopRelayTransport;
 
 /// Real TCP transport implementation with direct connection
 pub struct DirectTcpTunnelTransport {
@@ -19,17 +21,26 @@ pub struct DirectTcpTunnelTransport {
     target_port: u16,
     tcp_stream: Option<Arc<Mutex<TcpStream>>>,
     dns_resolver: DohResolver,
-    relay_transport: DirectRelayTransport,
+    relay_transport: Box<dyn RelayTransport>,
 }
 
 impl DirectTcpTunnelTransport {
     pub fn new(target_host: String, target_port: u16) -> Result<Self, TransportError> {
+        #[cfg(feature = "single_hop_relay")]
+        let relay_transport: Box<dyn RelayTransport> = Box::new(SingleHopRelayTransport::new(
+            "relay.example.com".to_string(),
+            8080
+        ));
+        
+        #[cfg(not(feature = "single_hop_relay"))]
+        let relay_transport: Box<dyn RelayTransport> = Box::new(DirectRelayTransport::default());
+        
         Ok(Self {
             target_host,
             target_port,
             tcp_stream: None,
             dns_resolver: DohResolver::new(),
-            relay_transport: DirectRelayTransport::default(),
+            relay_transport,
         })
     }
     
