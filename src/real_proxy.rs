@@ -132,14 +132,17 @@ impl RealProxyServer {
         
         let url = parts[1];
         
-        // Extract host and port from absolute URL
-        let (host, port) = if url.starts_with("http://") {
+        // Extract host, port, and path from absolute URL
+        let (host, port, path) = if url.starts_with("http://") {
             let url_part = &url[7..]; // Remove "http://"
             if let Some(slash_pos) = url_part.find('/') {
                 let host_part = &url_part[..slash_pos];
-                Self::parse_host_port(host_part, 80)
+                let path = &url_part[slash_pos..]; // Include the leading slash
+                let (host, port) = Self::parse_host_port(host_part, 80);
+                (host, port, path.to_string())
             } else {
-                Self::parse_host_port(url_part, 80)
+                let (host, port) = Self::parse_host_port(url_part, 80);
+                (host, port, "/".to_string())
             }
         } else {
             return Err("Only absolute HTTP URLs supported".into());
@@ -150,8 +153,46 @@ impl RealProxyServer {
         // Connect to target server
         let mut target_stream = TcpStream::connect(format!("{}:{}", host, port))?;
         
-        // Forward the original request
-        target_stream.write_all(request.as_bytes())?;
+        // Convert absolute-form request to origin-form
+        let method = parts[0];
+        let version = if parts.len() >= 3 { parts[2] } else { "HTTP/1.1" };
+        let mut origin_request = format!("{} {} {}\r\n", method, path, version);
+        
+        // Add filtered headers (skip the first line and hop-by-hop headers)
+        let mut lines = request.lines();
+        lines.next(); // Skip request line
+        for line in lines {
+            let header_line = line.trim();
+            if header_line.is_empty() {
+                break; // End of headers
+            }
+            
+            // Filter out hop-by-hop headers
+            let header_name = if let Some(colon_pos) = header_line.find(':') {
+                header_line[..colon_pos].trim().to_lowercase()
+            } else {
+                continue;
+            };
+            
+            match header_name.as_str() {
+                "proxy-connection" | "connection" | "keep-alive" | "te" | 
+                "trailer" | "transfer-encoding" | "upgrade" => {
+                    // Skip hop-by-hop headers
+                    continue;
+                }
+                _ => {
+                    origin_request.push_str(header_line);
+                    origin_request.push_str("\r\n");
+                }
+            }
+        }
+        
+        // Add Connection: close header
+        origin_request.push_str("Connection: close\r\n");
+        origin_request.push_str("\r\n"); // End headers
+        
+        // Forward the converted request
+        target_stream.write_all(origin_request.as_bytes())?;
         target_stream.flush()?;
         
         // Start bidirectional forwarding
