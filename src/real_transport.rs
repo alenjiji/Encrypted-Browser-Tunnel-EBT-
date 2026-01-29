@@ -224,8 +224,8 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
             }
         }
         
-        eprintln!("Failed to connect to any resolved IP for {}: {:?}", 
-                  self.target_host, last_error);
+        log!(LogLevel::Error, "Failed to connect to any resolved IP for {}: {:?}", 
+             self.target_host, last_error);
         Err(TransportError::ConnectionFailed)
     }
     

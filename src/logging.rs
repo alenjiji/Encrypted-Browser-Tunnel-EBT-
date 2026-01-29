@@ -1,9 +1,9 @@
-#[derive(PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub enum LogLevel {
-    Error,
-    Info,
-    Debug,
-    Trace,
+    Error = 0,
+    Info = 1,
+    Debug = 2,
+    Trace = 3,
 }
 
 pub static LOG_LEVEL: LogLevel = LogLevel::Error;

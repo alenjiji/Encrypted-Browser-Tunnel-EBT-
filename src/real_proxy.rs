@@ -9,6 +9,8 @@ use std::thread;
 use crate::config::ProxyPolicy;
 use crate::real_transport::DirectTcpTunnelTransport;
 use crate::transport::EncryptedTransport;
+use crate::logging::LogLevel;
+use crate::log;
 use tokio::task;
 
 /// Real proxy server that binds to network interfaces
@@ -46,11 +48,10 @@ impl RealProxyServer {
                 // Handle each connection in a separate task
                 let (stream, addr) = listener.accept()?;
                 stream.set_nodelay(true).ok();
-                println!("Real proxy accepted connection from {}", addr);
                 
                 task::spawn(async move {
                     if let Err(e) = Self::handle_connection(stream).await {
-                        eprintln!("Error handling connection: {}", e);
+                        log!(LogLevel::Error, "Error handling connection: {}", e);
                     }
                 });
             }
@@ -96,7 +97,6 @@ impl RealProxyServer {
         stream.set_nonblocking(false).ok();
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
-        println!("Real proxy received request: {}", request.lines().next().unwrap_or(""));
         
         if request.starts_with("GET ") {
             if request.contains("clients3.google.com/generate_204") {
@@ -144,7 +144,7 @@ impl RealProxyServer {
             
             // Establish connection to target
             if let Err(e) = transport.establish_connection().await {
-                eprintln!("Failed to establish connection to {}:{} - {}", host, port, e);
+                log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
                 return Err(e.into());
             }
             
@@ -206,7 +206,7 @@ impl RealProxyServer {
             return Err("Only absolute HTTP URLs supported".into());
         };
         
-        println!("HTTP request to {}:{}", host, port);
+        log!(LogLevel::Debug, "HTTP request to {}:{}", host, port);
         
         // Connect to target server
         let mut target_stream = TcpStream::connect(format!("{}:{}", host, port))?;
