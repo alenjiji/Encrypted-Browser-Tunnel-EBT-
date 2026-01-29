@@ -38,6 +38,14 @@ impl DirectTcpTunnelTransport {
         
         let client_stream = Arc::new(Mutex::new(client_stream));
         
+        // Set TCP_NODELAY on both streams
+        if let Ok(tcp) = tcp_stream.lock() {
+            tcp.set_nodelay(true).ok();
+        }
+        if let Ok(client) = client_stream.lock() {
+            client.set_nodelay(true).ok();
+        }
+        
         // client → TCP
         let a = thread::spawn({
             let tcp = Arc::clone(&tcp_stream);
@@ -68,12 +76,9 @@ impl DirectTcpTunnelTransport {
                 let mut src = source.lock().map_err(|_| TransportError::ConnectionFailed)?;
                 match src.read(&mut buffer) {
                     Ok(0) => {
-                        // EOF - perform half-close on destination write side only once
+                        // EOF - no shutdown needed
                         if !write_closed {
-                            if let Ok(dst) = dest.lock() {
-                                let _ = dst.shutdown(Shutdown::Write);
-                                println!("Forward: EOF reached, shutdown write side");
-                            }
+                            println!("Forward: EOF reached");
                         }
                         break; // Exit after EOF
                     }
@@ -89,12 +94,10 @@ impl DirectTcpTunnelTransport {
             if !write_closed {
                 let mut dst = dest.lock().map_err(|_| TransportError::ConnectionFailed)?;
                 if let Err(_) = dst.write_all(&buffer[..bytes_read]) {
-                    // Write failed - shutdown and mark as closed
-                    let _ = dst.shutdown(Shutdown::Write);
+                    // Write failed - mark as closed
                     write_closed = true;
                 } else if let Err(_) = dst.flush() {
-                    // Flush failed - shutdown and mark as closed  
-                    let _ = dst.shutdown(Shutdown::Write);
+                    // Flush failed - mark as closed  
                     write_closed = true;
                 } else {
                     println!("Forward: {} bytes transferred", bytes_read);

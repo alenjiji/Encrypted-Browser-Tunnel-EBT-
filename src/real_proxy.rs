@@ -60,12 +60,58 @@ impl RealProxyServer {
     
     /// Handle a single client connection
     async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-        // Read HTTP request
-        let mut buffer = [0; 1024];
-        let bytes_read = stream.read(&mut buffer)?;
-        let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+        // Read HTTP request headers only (until \r\n\r\n)
+        let mut buffer = Vec::new();
+        let mut temp_buf = [0u8; 1];
+        let mut header_end = 0;
         
+        // Read byte by byte until we find \r\n\r\n
+        loop {
+            let bytes_read = stream.read(&mut temp_buf)?;
+            if bytes_read == 0 {
+                break; // EOF
+            }
+            buffer.push(temp_buf[0]);
+            
+            // Check for \r\n\r\n pattern
+            if buffer.len() >= 4 {
+                let len = buffer.len();
+                if &buffer[len-4..len] == b"\r\n\r\n" {
+                    header_end = len;
+                    break;
+                }
+            }
+        }
+        
+        // Read any remaining bytes that might be TLS data
+        let mut leftover_bytes = Vec::new();
+        let mut remaining_buf = [0u8; 4096];
+        stream.set_nonblocking(true).ok();
+        if let Ok(n) = stream.read(&mut remaining_buf) {
+            if n > 0 {
+                leftover_bytes.extend_from_slice(&remaining_buf[..n]);
+            }
+        }
+        stream.set_nonblocking(false).ok();
+        
+        let request = String::from_utf8_lossy(&buffer[..header_end]);
         println!("Real proxy received request: {}", request.lines().next().unwrap_or(""));
+        
+        if request.starts_with("GET ") {
+            if request.contains("clients3.google.com/generate_204") {
+                let response = b"HTTP/1.1 204 No Content\r\n\r\n";
+                stream.write_all(response)?;
+                stream.flush()?;
+                return Ok(());
+            }
+            
+            if request.contains("detectportal.firefox.com") {
+                let response = b"HTTP/1.1 200 OK\r\n\r\n";
+                stream.write_all(response)?;
+                stream.flush()?;
+                return Ok(());
+            }
+        }
         
         if request.starts_with("CONNECT ") {
             // Parse CONNECT target from request line
@@ -85,11 +131,9 @@ impl RealProxyServer {
             };
             
             // Handle CONNECT request for HTTPS tunneling
-            let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-            stream.write_all(response.as_bytes())?;
+            let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+            stream.write_all(response)?;
             stream.flush()?;
-            
-            println!("CONNECT accepted, delegating to encrypted transport");
             
             // Create transport for this specific CONNECT target
             let mut transport = DirectTcpTunnelTransport::new(
@@ -103,13 +147,26 @@ impl RealProxyServer {
                 return Err(e.into());
             }
             
+            // Forward any leftover bytes (TLS ClientHello) to target before tunneling
+            if !leftover_bytes.is_empty() {
+                if let Some(target_stream) = transport.get_tcp_stream() {
+                    if let Ok(mut target) = target_stream.lock() {
+                        let _ = target.write_all(&leftover_bytes);
+                        let _ = target.flush();
+                    }
+                }
+            }
+            
             // Start encrypted forwarding using transport
             transport.start_forwarding(stream)?;
-        } else if request.starts_with("GET ") || request.starts_with("POST ") || request.starts_with("HEAD ") {
-            // Handle HTTP request forwarding
-            Self::handle_http_request(stream, &request).await?;
+            return Ok(());
         } else {
-            // Reject other methods
+            // Temporarily disable HTTP handling for debugging
+            // } else if request.starts_with("GET ") || request.starts_with("POST ") || request.starts_with("HEAD ") {
+            //     // Handle HTTP request forwarding
+            //     Self::handle_http_request(stream, &request).await?;
+            // } else {
+            // Reject non-CONNECT requests
             let response = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
             stream.write_all(response.as_bytes())?;
             stream.flush()?;
@@ -195,8 +252,13 @@ impl RealProxyServer {
         target_stream.write_all(origin_request.as_bytes())?;
         target_stream.flush()?;
         
-        // Start bidirectional forwarding
-        Self::forward_http_streams(client_stream, target_stream)?;
+        // Read the full response from target and forward to client
+        let mut response_buffer = Vec::new();
+        target_stream.read_to_end(&mut response_buffer)?;
+        
+        // Send response to client and close connection
+        client_stream.write_all(&response_buffer)?;
+        client_stream.flush()?;
         
         Ok(())
     }
