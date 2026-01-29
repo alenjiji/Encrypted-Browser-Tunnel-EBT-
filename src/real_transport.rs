@@ -62,16 +62,26 @@ impl DirectTcpTunnelTransport {
         tcp_write.set_write_timeout(None).ok();
         
         // client → TCP (no mutex)
-        let a = thread::spawn(move || Self::forward_data_direct(client_read, tcp_write));
+        let a = thread::Builder::new()
+            .name("client-to-tcp".to_string())
+            .spawn(move || Self::forward_data_direct(client_read, tcp_write))
+            .map_err(|_| TransportError::ConnectionFailed)?;
         
         // TCP → client (no mutex)
-        let b = thread::spawn(move || Self::forward_data_direct(tcp_read, client_write));
+        let b = thread::Builder::new()
+            .name("tcp-to-client".to_string())
+            .spawn(move || Self::forward_data_direct(tcp_read, client_write))
+            .map_err(|_| TransportError::ConnectionFailed)?;
         
-        // Block until both directions complete
-        let _ = a.join();
-        let _ = b.join();
+        // Wait for both threads to complete cleanly
+        let result_a = a.join();
+        let result_b = b.join();
         
-        Ok(())
+        // Handle thread panics or errors
+        match (result_a, result_b) {
+            (Ok(_), Ok(_)) => Ok(()),
+            _ => Err(TransportError::ConnectionFailed)
+        }
     }
     
     /// Forward data directly between streams (no mutex)
