@@ -1,0 +1,10 @@
+[package]
+name = "encrypted-browser-tunnel"
+version = "0.1.0"
+edition = "2021"
+description = "Educational encrypted browser tunnel implementation"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
