@@ -150,6 +150,7 @@ impl DirectTcpTunnelTransport {
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         // Wait for both threads to complete cleanly
+        log!(LogLevel::Debug, "Waiting for forwarding threads to complete");
         let result_a = a.join();
         let result_b = b.join();
         
@@ -163,8 +164,14 @@ impl DirectTcpTunnelTransport {
         
         // Handle thread panics or errors
         match (result_a, result_b) {
-            (Ok(_), Ok(_)) => Ok(()),
-            _ => Err(TransportError::ConnectionFailed)
+            (Ok(Ok(_)), Ok(Ok(_))) => {
+                log!(LogLevel::Debug, "Both forwarding threads completed successfully");
+                Ok(())
+            },
+            _ => {
+                log!(LogLevel::Debug, "One or both forwarding threads failed");
+                Err(TransportError::ConnectionFailed)
+            }
         }
     }
     
@@ -175,11 +182,13 @@ impl DirectTcpTunnelTransport {
             match src.read(&mut buf) {
                 Ok(0) => {
                     // EOF reached - shutdown write side of destination
+                    log!(LogLevel::Debug, "EOF detected on source stream");
                     let _ = dst.shutdown(std::net::Shutdown::Write);
                     return Ok(());
                 }
                 Ok(n) => {
                     if let Err(_) = dst.write_all(&buf[..n]) {
+                        log!(LogLevel::Debug, "Write failed to destination stream");
                         return Ok(());
                     }
                     byte_counter.fetch_add(n as u64, Ordering::Relaxed);
@@ -187,7 +196,8 @@ impl DirectTcpTunnelTransport {
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
                 }
-                Err(_) => {
+                Err(e) => {
+                    log!(LogLevel::Debug, "Read error on source stream: {}", e);
                     return Ok(());
                 }
             }
@@ -201,10 +211,19 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         let ips = self.dns_resolver.resolve(&self.target_host).await
             .map_err(|_| TransportError::ConnectionFailed)?;
         
+        if ips.is_empty() {
+            log!(LogLevel::Error, "No IP addresses resolved for {}", self.target_host);
+            return Err(TransportError::ConnectionFailed);
+        }
+        
         let mut last_error = None;
         
-        // Try each resolved IP address through relay transport
-        for ip in ips {
+        // Try each resolved IP address sequentially (not in parallel)
+        // This prevents unbounded parallel connection attempts during cold start
+        for (i, ip) in ips.iter().enumerate() {
+            log!(LogLevel::Debug, "Attempting connection {}/{} to {}:{} via {}", 
+                 i + 1, ips.len(), self.target_host, self.target_port, ip);
+            
             // LEAK ANNOTATION: LeakStatus::Intentional  
             // Relay handling in direct mode leaks connection metadata because:
             // 1. No actual relay indirection - connects directly to destination
@@ -212,26 +231,29 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
             // 3. Timing correlation possible between client request and outbound connection
             // 4. Phase 3 explicitly documents this as direct-connect behavior
             
-            match self.relay_transport.establish_relay_connection(ip, self.target_port).await {
+            match self.relay_transport.establish_relay_connection(*ip, self.target_port).await {
                 Ok(tcp) => {
-                    log!(LogLevel::Debug, "*** RELAY CONNECTION TO {}:{} ({}:{}) ***", 
-                         self.target_host, self.target_port, ip, self.target_port);
+                    log!(LogLevel::Debug, "Connection established to {}:{} via {} (attempt {})", 
+                         self.target_host, self.target_port, ip, i + 1);
                     
-                    let std_stream = tcp.into_std().map_err(|_| TransportError::ConnectionFailed)?;
+                    let std_stream = tcp.into_std().map_err(|e| {
+                        log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
+                        TransportError::ConnectionFailed
+                    })?;
                     
                     self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
-                    log!(LogLevel::Debug, "Relay connection established to {}:{} via {}", 
-                         self.target_host, self.target_port, ip);
                     return Ok(());
                 }
                 Err(e) => {
+                    log!(LogLevel::Debug, "Connection attempt {}/{} to {} via {} failed: {}", 
+                         i + 1, ips.len(), self.target_host, ip, e);
                     last_error = Some(e);
-                    continue;
+                    // Continue to next IP address
                 }
             }
         }
         
-        log!(LogLevel::Error, "Failed to connect to any resolved IP for {}: {:?}", 
+        log!(LogLevel::Error, "All connection attempts failed for {}: {:?}", 
              self.target_host, last_error);
         Err(TransportError::ConnectionFailed)
     }

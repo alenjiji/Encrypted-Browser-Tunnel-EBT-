@@ -28,11 +28,20 @@ impl RelayTransport for DirectRelayTransport {
     ) -> Result<tokio::net::TcpStream> {
         let addr = (target_ip, target_port);
         
+        // Use shorter timeout for cold-start stability
         let stream = timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(5),
             tokio::net::TcpStream::connect(addr)
         ).await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timeout"))??;
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timeout"))?;
+        
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => {
+                // Ensure failed connections are properly cleaned up
+                return Err(std::io::Error::new(e.kind(), format!("Connection to {}:{} failed: {}", target_ip, target_port, e)));
+            }
+        };
         
         stream.set_nodelay(true)?;
         

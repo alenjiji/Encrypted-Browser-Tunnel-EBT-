@@ -15,7 +15,8 @@ use tokio::task;
 use tokio::sync::Semaphore;
 
 lazy_static::lazy_static! {
-    static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(256));
+    // Reduce semaphore size to prevent unbounded parallel connections during cold start
+    static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(64));
 }
 
 /// Real proxy server that binds to network interfaces
@@ -47,24 +48,42 @@ impl RealProxyServer {
     /// Accept multiple connections concurrently
     pub async fn accept_connections(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref listener) = self.listener {
-            println!("Real proxy waiting for connections...");
+            log!(LogLevel::Info, "Proxy server ready for connections");
             
             loop {
                 // Handle each connection in a separate task
                 let (stream, addr) = listener.accept()?;
                 stream.set_nodelay(true).ok();
                 
+                log!(LogLevel::Debug, "Connection accepted from {}", addr);
+                
                 task::spawn(async move {
+                    // Ensure task cleanup on early exit
+                    let _cleanup_guard = scopeguard::guard((), |_| {
+                        log!(LogLevel::Debug, "Task cleanup for {}", addr);
+                    });
+                    
                     let permit = match TUNNEL_SEMAPHORE.clone().acquire_owned().await {
-                        Ok(p) => p,
-                        Err(_) => return,
+                        Ok(p) => {
+                            log!(LogLevel::Debug, "Task permit acquired for {}", addr);
+                            p
+                        },
+                        Err(_) => {
+                            log!(LogLevel::Error, "Failed to acquire task permit for {}", addr);
+                            return;
+                        }
                     };
                     
-                    if let Err(e) = Self::handle_connection(stream).await {
-                        log!(LogLevel::Error, "Error handling connection: {}", e);
-                    }
+                    let result = Self::handle_connection(stream).await;
                     
+                    // Ensure permit is always released
                     drop(permit);
+                    log!(LogLevel::Debug, "Task permit released for {}", addr);
+                    
+                    match result {
+                        Ok(_) => log!(LogLevel::Debug, "Connection {} completed successfully", addr),
+                        Err(e) => log!(LogLevel::Error, "Connection {} failed: {}", addr, e),
+                    }
                 });
             }
         } else {
@@ -74,6 +93,8 @@ impl RealProxyServer {
     
     /// Handle a single client connection
     async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+        log!(LogLevel::Debug, "Reading client request headers");
+        
         // Read HTTP request headers only (until \r\n\r\n)
         let mut buffer = Vec::new();
         let mut temp_buf = [0u8; 1];
@@ -83,6 +104,7 @@ impl RealProxyServer {
         loop {
             let bytes_read = stream.read(&mut temp_buf)?;
             if bytes_read == 0 {
+                log!(LogLevel::Debug, "Client EOF during header read");
                 break; // EOF
             }
             buffer.push(temp_buf[0]);
@@ -97,6 +119,11 @@ impl RealProxyServer {
             }
         }
         
+        if header_end == 0 {
+            log!(LogLevel::Debug, "No complete headers received");
+            return Ok(());
+        }
+        
         // Read any remaining bytes that might be TLS data
         let mut leftover_bytes = Vec::new();
         let mut remaining_buf = [0u8; 4096];
@@ -104,11 +131,13 @@ impl RealProxyServer {
         if let Ok(n) = stream.read(&mut remaining_buf) {
             if n > 0 {
                 leftover_bytes.extend_from_slice(&remaining_buf[..n]);
+                log!(LogLevel::Debug, "Read {} leftover bytes (likely TLS)", n);
             }
         }
         stream.set_nonblocking(false).ok();
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
+        log!(LogLevel::Debug, "Request type: {}", request.lines().next().unwrap_or("unknown"));
         
         if request.starts_with("GET ") {
             if request.contains("clients3.google.com/generate_204") {
@@ -143,10 +172,14 @@ impl RealProxyServer {
                 ("unknown".to_string(), 443u16)
             };
             
+            log!(LogLevel::Debug, "CONNECT tunnel requested to {}:{}", host, port);
+            
             // Handle CONNECT request for HTTPS tunneling
             let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
             stream.write_all(response)?;
             stream.flush()?;
+            
+            log!(LogLevel::Debug, "CONNECT response sent, establishing upstream connection");
             
             // Create transport for this specific CONNECT target
             let mut transport = DirectTcpTunnelTransport::new(
@@ -161,9 +194,12 @@ impl RealProxyServer {
             // 3. This is documented Phase 3 behavior - no relay indirection yet
             
             // Establish connection to target
-            if let Err(e) = transport.establish_connection().await {
-                log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
-                return Err(e.into());
+            match transport.establish_connection().await {
+                Ok(_) => log!(LogLevel::Debug, "Upstream connection established to {}:{}", host, port),
+                Err(e) => {
+                    log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
+                    return Err(e.into());
+                }
             }
             
             // Forward any leftover bytes (TLS ClientHello) to target before tunneling
@@ -172,12 +208,21 @@ impl RealProxyServer {
                     if let Ok(mut target) = target_stream.lock() {
                         let _ = target.write_all(&leftover_bytes);
                         let _ = target.flush();
+                        log!(LogLevel::Debug, "Forwarded {} leftover bytes to upstream", leftover_bytes.len());
                     }
                 }
             }
             
+            log!(LogLevel::Debug, "Starting tunnel forwarding for {}:{}", host, port);
+            
             // Start encrypted forwarding using transport
-            transport.start_forwarding(stream)?;
+            match transport.start_forwarding(stream) {
+                Ok(_) => log!(LogLevel::Debug, "Tunnel completed for {}:{}", host, port),
+                Err(e) => {
+                    log!(LogLevel::Error, "Tunnel forwarding failed for {}:{} - {}", host, port, e);
+                    return Err(e.into());
+                }
+            }
             return Ok(());
         } else {
             // Temporarily disable HTTP handling for debugging

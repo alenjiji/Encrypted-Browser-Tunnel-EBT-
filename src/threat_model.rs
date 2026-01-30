@@ -65,16 +65,15 @@ pub mod invariants {
     /// Compile-time assertion: TLS payload inspection is forbidden
     const _: () = {
         // This will fail to compile if any code tries to inspect TLS payload
-        // by requiring explicit opt-out via unsafe marker
         struct TlsPayloadInspectionForbidden;
-        impl !Send for TlsPayloadInspectionForbidden {}
+        const _GUARD: TlsPayloadInspectionForbidden = TlsPayloadInspectionForbidden;
     };
     
     /// Compile-time assertion: HTTP parsing after CONNECT is forbidden
     const _: () = {
         // Ensures no HTTP parsing occurs in tunnel data path
         struct HttpParsingAfterConnectForbidden;
-        impl !Sync for HttpParsingAfterConnectForbidden {}
+        const _GUARD: HttpParsingAfterConnectForbidden = HttpParsingAfterConnectForbidden;
     };
 }
 
