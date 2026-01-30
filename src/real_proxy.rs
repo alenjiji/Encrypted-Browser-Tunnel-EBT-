@@ -15,8 +15,8 @@ use tokio::task;
 use tokio::sync::Semaphore;
 
 lazy_static::lazy_static! {
-    // Reduce semaphore size to prevent unbounded parallel connections during cold start
-    static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(64));
+    // Restore higher global concurrency for asset-heavy sites
+    static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(256));
 }
 
 /// Real proxy server that binds to network interfaces

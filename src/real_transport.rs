@@ -218,11 +218,18 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         
         let mut last_error = None;
         
-        // Try each resolved IP address sequentially (not in parallel)
-        // This prevents unbounded parallel connection attempts during cold start
+        // Try first IP address immediately, then others if needed
+        // This avoids head-of-line blocking while maintaining sequential attempts per host
         for (i, ip) in ips.iter().enumerate() {
-            log!(LogLevel::Debug, "Attempting connection {}/{} to {}:{} via {}", 
-                 i + 1, ips.len(), self.target_host, self.target_port, ip);
+            if i == 0 {
+                // First attempt - immediate
+                log!(LogLevel::Debug, "Primary connection attempt to {}:{} via {}", 
+                     self.target_host, self.target_port, ip);
+            } else {
+                // Fallback attempts - only after first fails
+                log!(LogLevel::Debug, "Fallback connection attempt {}/{} to {}:{} via {}", 
+                     i + 1, ips.len(), self.target_host, self.target_port, ip);
+            }
             
             // LEAK ANNOTATION: LeakStatus::Intentional  
             // Relay handling in direct mode leaks connection metadata because:
