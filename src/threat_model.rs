@@ -5,6 +5,9 @@
 
 #![forbid(unsafe_code)]
 
+/// Current development phase - enforces phase boundaries
+pub const PHASE: u8 = 4;
+
 /// System observers who can see different types of metadata
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Observer {
@@ -48,6 +51,8 @@ pub mod visibility {
 
 /// Compile-time enforcement of Phase 3 invariants
 pub mod invariants {
+    use super::PHASE;
+    
     /// Marker trait: Types that never inspect TLS payload
     pub trait NoTlsInspection {}
     
@@ -70,5 +75,55 @@ pub mod invariants {
         // Ensures no HTTP parsing occurs in tunnel data path
         struct HttpParsingAfterConnectForbidden;
         impl !Sync for HttpParsingAfterConnectForbidden {}
+    };
+}
+
+/// Phase boundary enforcement - prevents premature Phase 5+ features
+pub mod phase_guards {
+    use super::PHASE;
+    
+    /// Compile-time guard: Traffic shaping forbidden in Phase 4
+    const _: () = {
+        if PHASE < 5 {
+            // Traffic shaping module would fail to compile
+            struct TrafficShapingForbidden;
+            const _GUARD: TrafficShapingForbidden = TrafficShapingForbidden;
+        }
+    };
+    
+    /// Compile-time guard: Padding forbidden in Phase 4
+    const _: () = {
+        if PHASE < 5 {
+            // Padding logic would fail to compile
+            struct PaddingForbidden;
+            const _GUARD: PaddingForbidden = PaddingForbidden;
+        }
+    };
+    
+    /// Compile-time guard: Timing obfuscation forbidden in Phase 4
+    const _: () = {
+        if PHASE < 5 {
+            // Timing obfuscation would fail to compile
+            struct TimingObfuscationForbidden;
+            const _GUARD: TimingObfuscationForbidden = TimingObfuscationForbidden;
+        }
+    };
+    
+    /// Compile-time guard: Cover traffic forbidden in Phase 4
+    const _: () = {
+        if PHASE < 7 {
+            // Cover traffic would fail to compile
+            struct CoverTrafficForbidden;
+            const _GUARD: CoverTrafficForbidden = CoverTrafficForbidden;
+        }
+    };
+    
+    /// Compile-time guard: DNS modification forbidden in Phase 4
+    const _: () = {
+        if PHASE < 5 {
+            // DNS obfuscation would fail to compile
+            struct DnsModificationForbidden;
+            const _GUARD: DnsModificationForbidden = DnsModificationForbidden;
+        }
     };
 }
