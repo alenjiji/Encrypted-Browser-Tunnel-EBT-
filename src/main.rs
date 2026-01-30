@@ -17,6 +17,11 @@ mod trust_boundaries;
 mod prohibited_capabilities;
 mod threat_model_tests;
 mod crypto_transport_design;
+mod control_plane;
+mod data_plane;
+mod key_management;
+mod zone_interfaces;
+mod crypto_transport_tests;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]

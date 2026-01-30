@@ -30,8 +30,7 @@ impl NetworkMetadata {
         }
     }
     
-    /// Prohibited: No getter methods
-    /// Cannot extract sensitive data
+    // Prohibited: No getter methods
 }
 
 /// Prohibited: Raw socket access in core
@@ -52,22 +51,14 @@ impl UpstreamMessage {
         Self { encrypted_data }
     }
     
-    /// Prohibited: No method to set destination hostname
-    /// fn set_destination(&mut self, dest: DestinationHostname) - MISSING
-    
-    /// Prohibited: No method to include plaintext metadata
-    /// fn add_metadata(&mut self, meta: NetworkMetadata) - MISSING
+    // Prohibited: No method to set destination or include metadata
 }
 
 /// Prohibited: Cross-zone data correlation
 pub struct ZoneIsolation;
 
 impl ZoneIsolation {
-    /// Prohibited: No method to correlate source and destination
-    /// fn correlate(source: SourceIp, dest: DestinationHostname) - MISSING
-    
-    /// Prohibited: No method to bridge trust zones
-    /// fn bridge_zones(from: TrustZone, to: TrustZone) - MISSING
+    // Prohibited: No methods to correlate or bridge zones
 }
 
 /// Prohibited: Implicit logging capabilities
@@ -82,9 +73,7 @@ impl LoggingCapability {
         Self { enabled: true }
     }
     
-    /// Prohibited: No default constructor
-    /// fn new() - MISSING
-    /// No Default trait implementation
+    // Prohibited: No default constructor
 }
 
 /// Prohibited: Plaintext data in non-terminal zones
@@ -103,9 +92,7 @@ impl PlaintextData {
         Self { data }
     }
     
-    /// Prohibited: No constructor for intermediate zones
-    /// fn new_in_entry_zone() - MISSING
-    /// fn new_in_relay_zone() - MISSING
+    // Prohibited: No constructors for intermediate zones
 }
 
 /// Prohibited: Direct IP address exposure
@@ -119,31 +106,16 @@ impl IpAddress {
         Self { addr }
     }
     
-    /// Prohibited: No getter methods
-    /// fn as_ip(&self) -> &std::net::IpAddr - MISSING
-    /// fn to_string(&self) -> String - MISSING
+    // Prohibited: No getter methods
 }
 
 /// Prohibited: Session correlation across zones
 pub struct SessionCorrelation;
 
 impl SessionCorrelation {
-    /// Prohibited: No methods to link sessions
-    /// fn link_sessions(session1: SessionId, session2: SessionId) - MISSING
-    /// fn correlate_by_timing(sessions: Vec<SessionId>) - MISSING
+    // Prohibited: No methods to link or correlate sessions
 }
 
-/// Documentation-only prohibition markers
-/// These cannot be enforced at compile time but document intent
-
-/// PROHIBITED: Do not implement std::fmt::Display for sensitive types
-/// This prevents accidental logging via format strings
-
-/// PROHIBITED: Do not implement Clone for unique identifiers
-/// This prevents accidental duplication of sensitive data
-
-/// PROHIBITED: Do not implement Serialize for cross-zone data
-/// This prevents accidental serialization of sensitive information
-
-/// PROHIBITED: Do not use println! or eprintln! with sensitive data
-/// Use explicit logging capabilities only
+// Documentation-only prohibition markers
+// PROHIBITED: No Display, Debug, Clone, Serialize, Default traits for sensitive types
+// PROHIBITED: No println!/eprintln! with sensitive data - use explicit logging only

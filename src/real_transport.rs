@@ -32,14 +32,14 @@ impl DirectTcpTunnelTransport {
     pub fn new(target_host: String, target_port: u16) -> Result<Self, TransportError> {
         #[cfg(feature = "multi_hop_relay")]
         let relay_transport: Box<dyn RelayTransport> = Box::new(MultiHopRelayTransport::new(vec![
-            ("relay1.example.com".to_string(), 8080),
-            ("relay2.example.com".to_string(), 8080),
-            ("relay3.example.com".to_string(), 8080),
+            ("127.0.0.1".parse().unwrap(), 8080),
+            ("127.0.0.1".parse().unwrap(), 8081),
+            ("127.0.0.1".parse().unwrap(), 8082),
         ]));
         
         #[cfg(all(feature = "single_hop_relay", not(feature = "multi_hop_relay")))]
         let relay_transport: Box<dyn RelayTransport> = Box::new(SingleHopRelayTransport::new(
-            "relay.example.com".to_string(),
+            "127.0.0.1".parse().unwrap(),
             8080
         ));
         
@@ -205,14 +205,14 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         
         // Try each resolved IP address through relay transport
         for ip in ips {
-            match self.relay_transport.establish_relay_connection(&ip.to_string(), self.target_port) {
+            match self.relay_transport.establish_relay_connection(ip, self.target_port).await {
                 Ok(tcp) => {
                     log!(LogLevel::Debug, "*** RELAY CONNECTION TO {}:{} ({}:{}) ***", 
                          self.target_host, self.target_port, ip, self.target_port);
                     
-                    tcp.set_nodelay(true).ok();
+                    let std_stream = tcp.into_std().map_err(|_| TransportError::ConnectionFailed)?;
                     
-                    self.tcp_stream = Some(Arc::new(Mutex::new(tcp)));
+                    self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
                     log!(LogLevel::Debug, "Relay connection established to {}:{} via {}", 
                          self.target_host, self.target_port, ip);
                     return Ok(());
