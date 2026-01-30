@@ -182,13 +182,11 @@ impl DirectTcpTunnelTransport {
             match src.read(&mut buf) {
                 Ok(0) => {
                     // EOF reached - shutdown write side of destination
-                    log!(LogLevel::Debug, "EOF detected on source stream");
                     let _ = dst.shutdown(std::net::Shutdown::Write);
                     return Ok(());
                 }
                 Ok(n) => {
                     if let Err(_) = dst.write_all(&buf[..n]) {
-                        log!(LogLevel::Debug, "Write failed to destination stream");
                         return Ok(());
                     }
                     byte_counter.fetch_add(n as u64, Ordering::Relaxed);
@@ -196,8 +194,7 @@ impl DirectTcpTunnelTransport {
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
                 }
-                Err(e) => {
-                    log!(LogLevel::Debug, "Read error on source stream: {}", e);
+                Err(_) => {
                     return Ok(());
                 }
             }

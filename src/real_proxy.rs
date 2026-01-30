@@ -52,37 +52,22 @@ impl RealProxyServer {
             
             loop {
                 // Handle each connection in a separate task
-                let (stream, addr) = listener.accept()?;
+                let (stream, _addr) = listener.accept()?;
                 stream.set_nodelay(true).ok();
                 
-                log!(LogLevel::Debug, "Connection accepted from {}", addr);
-                
                 task::spawn(async move {
-                    // Ensure task cleanup on early exit
-                    let _cleanup_guard = scopeguard::guard((), |_| {
-                        log!(LogLevel::Debug, "Task cleanup for {}", addr);
-                    });
-                    
                     let permit = match TUNNEL_SEMAPHORE.clone().acquire_owned().await {
-                        Ok(p) => {
-                            log!(LogLevel::Debug, "Task permit acquired for {}", addr);
-                            p
-                        },
-                        Err(_) => {
-                            log!(LogLevel::Error, "Failed to acquire task permit for {}", addr);
-                            return;
-                        }
+                        Ok(p) => p,
+                        Err(_) => return,
                     };
                     
                     let result = Self::handle_connection(stream).await;
                     
                     // Ensure permit is always released
                     drop(permit);
-                    log!(LogLevel::Debug, "Task permit released for {}", addr);
                     
-                    match result {
-                        Ok(_) => log!(LogLevel::Debug, "Connection {} completed successfully", addr),
-                        Err(e) => log!(LogLevel::Error, "Connection {} failed: {}", addr, e),
+                    if let Err(e) = result {
+                        log!(LogLevel::Error, "Connection failed: {}", e);
                     }
                 });
             }
@@ -93,8 +78,6 @@ impl RealProxyServer {
     
     /// Handle a single client connection
     async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-        log!(LogLevel::Debug, "Reading client request headers");
-        
         // Read HTTP request headers only (until \r\n\r\n)
         let mut buffer = Vec::new();
         let mut temp_buf = [0u8; 1];
@@ -104,7 +87,6 @@ impl RealProxyServer {
         loop {
             let bytes_read = stream.read(&mut temp_buf)?;
             if bytes_read == 0 {
-                log!(LogLevel::Debug, "Client EOF during header read");
                 break; // EOF
             }
             buffer.push(temp_buf[0]);
@@ -120,7 +102,6 @@ impl RealProxyServer {
         }
         
         if header_end == 0 {
-            log!(LogLevel::Debug, "No complete headers received");
             return Ok(());
         }
         
@@ -131,13 +112,11 @@ impl RealProxyServer {
         if let Ok(n) = stream.read(&mut remaining_buf) {
             if n > 0 {
                 leftover_bytes.extend_from_slice(&remaining_buf[..n]);
-                log!(LogLevel::Debug, "Read {} leftover bytes (likely TLS)", n);
             }
         }
         stream.set_nonblocking(false).ok();
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
-        log!(LogLevel::Debug, "Request type: {}", request.lines().next().unwrap_or("unknown"));
         
         if request.starts_with("GET ") {
             if request.contains("clients3.google.com/generate_204") {
@@ -179,8 +158,6 @@ impl RealProxyServer {
             stream.write_all(response)?;
             stream.flush()?;
             
-            log!(LogLevel::Debug, "CONNECT response sent, establishing upstream connection");
-            
             // Create transport for this specific CONNECT target
             let mut transport = DirectTcpTunnelTransport::new(
                 host.clone(),
@@ -195,7 +172,7 @@ impl RealProxyServer {
             
             // Establish connection to target
             match transport.establish_connection().await {
-                Ok(_) => log!(LogLevel::Debug, "Upstream connection established to {}:{}", host, port),
+                Ok(_) => {},
                 Err(e) => {
                     log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
                     return Err(e.into());
@@ -208,21 +185,12 @@ impl RealProxyServer {
                     if let Ok(mut target) = target_stream.lock() {
                         let _ = target.write_all(&leftover_bytes);
                         let _ = target.flush();
-                        log!(LogLevel::Debug, "Forwarded {} leftover bytes to upstream", leftover_bytes.len());
                     }
                 }
             }
             
-            log!(LogLevel::Debug, "Starting tunnel forwarding for {}:{}", host, port);
-            
             // Start encrypted forwarding using transport
-            match transport.start_forwarding(stream) {
-                Ok(_) => log!(LogLevel::Debug, "Tunnel completed for {}:{}", host, port),
-                Err(e) => {
-                    log!(LogLevel::Error, "Tunnel forwarding failed for {}:{} - {}", host, port, e);
-                    return Err(e.into());
-                }
-            }
+            transport.start_forwarding(stream)?;
             return Ok(());
         } else {
             // Temporarily disable HTTP handling for debugging
