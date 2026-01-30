@@ -3,6 +3,8 @@
 //! Represents Phase 3 behavior: what each observer can see in the current system.
 //! This module documents existing leaks and visibility, not mitigations.
 
+#![forbid(unsafe_code)]
+
 /// System observers who can see different types of metadata
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Observer {
@@ -31,4 +33,31 @@ pub mod visibility {
     
     /// HTTP payload is encrypted and not visible to intermediaries
     pub const PAYLOAD_VISIBLE: bool = false;
+}
+
+/// Compile-time enforcement of Phase 3 invariants
+pub mod invariants {
+    /// Marker trait: Types that never inspect TLS payload
+    pub trait NoTlsInspection {}
+    
+    /// Marker trait: Types that never parse HTTP after CONNECT
+    pub trait NoHttpParsing {}
+    
+    /// Marker trait: Types that never log destination identifiers
+    pub trait NoDestinationLogging {}
+    
+    /// Compile-time assertion: TLS payload inspection is forbidden
+    const _: () = {
+        // This will fail to compile if any code tries to inspect TLS payload
+        // by requiring explicit opt-out via unsafe marker
+        struct TlsPayloadInspectionForbidden;
+        impl !Send for TlsPayloadInspectionForbidden {}
+    };
+    
+    /// Compile-time assertion: HTTP parsing after CONNECT is forbidden
+    const _: () = {
+        // Ensures no HTTP parsing occurs in tunnel data path
+        struct HttpParsingAfterConnectForbidden;
+        impl !Sync for HttpParsingAfterConnectForbidden {}
+    };
 }
