@@ -17,6 +17,17 @@ pub enum Observer {
     GlobalObserver, // Passive global observer (IXP / nation-state)
 }
 
+/// Classification of information leaks in Phase 3
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeakStatus {
+    /// Leak is by design and documented
+    Intentional,
+    /// Leak is unavoidable given current architecture
+    Inherent,
+    /// Leak must not occur - violation of Phase 3 guarantees
+    Forbidden,
+}
+
 /// Metadata visibility constants - represents Phase 3 behavior
 pub mod visibility {
     /// Destination IP is visible to network observers

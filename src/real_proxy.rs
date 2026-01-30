@@ -154,6 +154,12 @@ impl RealProxyServer {
                 port
             )?;
             
+            // LEAK ANNOTATION: LeakStatus::Intentional
+            // Connection establishment leaks destination IP and SNI to ISP/transit because:
+            // 1. Direct TCP connection exposes destination IP in packet headers
+            // 2. TLS handshake SNI field contains domain name in plaintext
+            // 3. This is documented Phase 3 behavior - no relay indirection yet
+            
             // Establish connection to target
             if let Err(e) = transport.establish_connection().await {
                 log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);

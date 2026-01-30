@@ -205,6 +205,13 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         
         // Try each resolved IP address through relay transport
         for ip in ips {
+            // LEAK ANNOTATION: LeakStatus::Intentional  
+            // Relay handling in direct mode leaks connection metadata because:
+            // 1. No actual relay indirection - connects directly to destination
+            // 2. ISP sees real destination IP in TCP SYN packets
+            // 3. Timing correlation possible between client request and outbound connection
+            // 4. Phase 3 explicitly documents this as direct-connect behavior
+            
             match self.relay_transport.establish_relay_connection(ip, self.target_port).await {
                 Ok(tcp) => {
                     log!(LogLevel::Debug, "*** RELAY CONNECTION TO {}:{} ({}:{}) ***", 

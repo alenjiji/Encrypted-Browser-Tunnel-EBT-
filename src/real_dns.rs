@@ -35,6 +35,12 @@ impl RealDnsResolver {
     
     /// Resolve DNS query according to policy
     pub async fn resolve_with_policy(&self, query: DnsQuery) -> Result<DnsResponse, Box<dyn std::error::Error>> {
+        // LEAK ANNOTATION: LeakStatus::Inherent
+        // DNS queries leak domain names to ISP/transit networks due to:
+        // 1. System resolver bypassing tunnel (OS behavior)
+        // 2. IPv6 Happy Eyeballs parallel resolution
+        // 3. Browser DNS prefetching outside proxy scope
+        
         // Check policy compliance before resolution
         self.enforce_policy(&query)?;
         
