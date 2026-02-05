@@ -30,7 +30,7 @@ impl RelayTransport for DirectRelayTransport {
         
         // Use shorter timeout for cold-start stability
         let stream = timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(2),
             tokio::net::TcpStream::connect(addr)
         ).await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timeout"))?;
