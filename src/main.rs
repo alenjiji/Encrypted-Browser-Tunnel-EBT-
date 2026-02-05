@@ -26,6 +26,7 @@ mod threat_model;
 mod traffic_shaping;
 mod relay_protocol;
 mod transport_adapter;
+mod protocol_engine;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
