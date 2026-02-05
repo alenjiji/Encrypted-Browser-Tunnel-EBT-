@@ -189,10 +189,10 @@ impl DirectTcpTunnelTransport {
                 Ok(n) => {
                     // Apply traffic shaping hook before writing to socket
                     let shaped_data = traffic_shaping::shape_outbound_data(&buf[..n]);
-                    if let Err(_) = dst.write_all(shaped_data) {
+                    if let Err(_) = dst.write_all(&shaped_data) {
                         return Ok(());
                     }
-                    byte_counter.fetch_add(n as u64, Ordering::Relaxed);
+                    byte_counter.fetch_add(shaped_data.len() as u64, Ordering::Relaxed);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
