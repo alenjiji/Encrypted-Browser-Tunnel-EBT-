@@ -39,15 +39,22 @@ impl BindingPump {
                 let conn_ids: Vec<u32> = transports.keys().copied().collect();
                 
                 for conn_id in conn_ids {
-                    // Pump frames from protocol to transport
-                    if let Ok(mut engine) = protocol_engine.lock() {
-                        while let Some(frame) = engine.next_outbound_frame(conn_id) {
-                            if let Some(transport) = transports.get_mut(&conn_id) {
-                                if transport.send_bytes(&frame).is_err() {
-                                    // Transport failed, remove it
-                                    transports.remove(&conn_id);
-                                    break;
-                                }
+                    // Extract frames from protocol (short lock)
+                    let mut frames = Vec::new();
+                    {
+                        if let Ok(mut engine) = protocol_engine.lock() {
+                            while let Some(frame) = engine.next_outbound_frame(conn_id) {
+                                frames.push(frame);
+                            }
+                        }
+                    }
+                    
+                    // Send frames to transport (no protocol lock held)
+                    for frame in frames {
+                        if let Some(transport) = transports.get_mut(&conn_id) {
+                            if transport.send_bytes(&frame).is_err() {
+                                transports.remove(&conn_id);
+                                break;
                             }
                         }
                     }
