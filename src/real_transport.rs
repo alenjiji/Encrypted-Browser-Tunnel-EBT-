@@ -217,145 +217,37 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
             return Err(TransportError::ConnectionFailed);
         }
         
-        // Happy Eyeballs: try up to 2 IPs in parallel (typically IPv6 + IPv4)
-        let parallel_attempts = std::cmp::min(2, ips.len());
+        // Sequential connection attempts
+        log!(LogLevel::Debug, "Sequential connection attempts to {}:{} ({} IPs)", 
+             self.target_host, self.target_port, ips.len());
         
-        if parallel_attempts == 1 {
-            // Single IP - direct attempt
-            let ip = ips[0];
-            log!(LogLevel::Debug, "Single IP connection attempt to {}:{} via {}", 
+        let mut last_error = None;
+        
+        for ip in ips {
+            log!(LogLevel::Debug, "Attempting connection to {}:{} via {}", 
                  self.target_host, self.target_port, ip);
             
             match self.relay_transport.establish_relay_connection(ip, self.target_port).await {
                 Ok(tcp) => {
+                    log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
+                         self.target_host, self.target_port, ip);
+                    
                     let std_stream = tcp.into_std().map_err(|e| {
                         log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
                         TransportError::ConnectionFailed
                     })?;
+                    
                     self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
                     return Ok(());
                 }
                 Err(e) => {
-                    log!(LogLevel::Error, "Connection failed to {}: {}", ip, e);
-                    return Err(TransportError::ConnectionFailed);
+                    log!(LogLevel::Debug, "Connection failed to {}: {}", ip, e);
+                    last_error = Some(e);
                 }
             }
         }
         
-        // Parallel attempts for multiple IPs
-        log!(LogLevel::Debug, "Parallel connection attempts to {}:{} ({} IPs)", 
-             self.target_host, self.target_port, parallel_attempts);
-        
-        let mut tasks = Vec::new();
-        
-        for i in 0..parallel_attempts {
-            let ip = ips[i];
-            let mut transport = Box::new(DirectRelayTransport::default());
-            let port = self.target_port;
-            
-            let task = tokio::spawn(async move {
-                transport.establish_relay_connection(ip, port).await
-                    .map(|stream| (ip, stream))
-            });
-            
-            tasks.push(task);
-        }
-        
-        // Wait for first successful connection
-        let mut last_error = None;
-        
-        while !tasks.is_empty() {
-            if tasks.len() == 1 {
-                let task = tasks.pop().unwrap();
-                match task.await {
-                    Ok(Ok((ip, tcp))) => {
-                        log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
-                             self.target_host, self.target_port, ip);
-                        
-                        let std_stream = tcp.into_std().map_err(|e| {
-                            log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
-                            TransportError::ConnectionFailed
-                        })?;
-                        
-                        self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
-                        return Ok(());
-                    }
-                    Ok(Err(e)) => {
-                        last_error = Some(e);
-                    }
-                    Err(_) => {
-                        log!(LogLevel::Debug, "Connection task was cancelled");
-                    }
-                }
-            } else {
-                // Race the first two tasks
-                let mut task1 = tasks.remove(0);
-                let mut task2 = tasks.remove(0);
-                
-                tokio::select! {
-                    result1 = &mut task1 => {
-                        match result1 {
-                            Ok(Ok((ip, tcp))) => {
-                                log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
-                                     self.target_host, self.target_port, ip);
-                                
-                                let std_stream = tcp.into_std().map_err(|e| {
-                                    log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
-                                    TransportError::ConnectionFailed
-                                })?;
-                                
-                                self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
-                                
-                                // Put remaining task back to complete naturally
-                                tasks.insert(0, task2);
-                                return Ok(());
-                            }
-                            Ok(Err(e)) => {
-                                last_error = Some(e);
-                                // Put the other task back to continue trying
-                                tasks.insert(0, task2);
-                            }
-                            Err(_) => {
-                                log!(LogLevel::Debug, "Connection task was cancelled");
-                                // Put the other task back to continue trying
-                                tasks.insert(0, task2);
-                            }
-                        }
-                    }
-                    result2 = &mut task2 => {
-                        match result2 {
-                            Ok(Ok((ip, tcp))) => {
-                                log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
-                                     self.target_host, self.target_port, ip);
-                                
-                                let std_stream = tcp.into_std().map_err(|e| {
-                                    log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
-                                    TransportError::ConnectionFailed
-                                })?;
-                                
-                                self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
-                                
-                                // Put remaining task back to complete naturally
-                                tasks.insert(0, task1);
-                                return Ok(());
-                            }
-                            Ok(Err(e)) => {
-                                last_error = Some(e);
-                                // Put the other task back to continue trying
-                                tasks.insert(0, task1);
-                            }
-                            Err(_) => {
-                                log!(LogLevel::Debug, "Connection task was cancelled");
-                                // Put the other task back to continue trying
-                                tasks.insert(0, task1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        log!(LogLevel::Error, "All parallel connection attempts failed for {}: {:?}", 
+        log!(LogLevel::Error, "All sequential connection attempts failed for {}: {:?}", 
              self.target_host, last_error);
         Err(TransportError::ConnectionFailed)
     }
