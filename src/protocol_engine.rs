@@ -11,6 +11,7 @@ pub struct ProtocolEngine {
     connection_table: ConnectionTable,
     negotiator: ProtocolNegotiator,
     outbound_frames: HashMap<u32, Vec<Vec<u8>>>,
+    frame_buffers: HashMap<u32, Vec<u8>>,
 }
 
 impl ProtocolEngine {
@@ -19,16 +20,24 @@ impl ProtocolEngine {
             connection_table: ConnectionTable::new(limits),
             negotiator: ProtocolNegotiator::new(),
             outbound_frames: HashMap::new(),
+            frame_buffers: HashMap::new(),
         }
     }
     
-    pub fn on_bytes_received(&mut self, conn_id: u32, data: &[u8]) {
-        // Parse frames from raw bytes
-        let mut cursor = Cursor::new(data);
+    pub fn on_transport_bytes(&mut self, conn_id: u32, data: &[u8]) {
+        // Accumulate bytes in connection-specific buffer
+        let buffer = self.frame_buffers.entry(conn_id).or_insert_with(Vec::new);
+        buffer.extend_from_slice(data);
         
-        while cursor.position() < data.len() as u64 {
+        // Parse complete frames from buffer
+        while buffer.len() >= 6 { // Minimum frame size
+            let mut cursor = Cursor::new(&buffer);
+            
             match FrameDecoder::decode_frame(&mut cursor) {
                 Ok((version, frame_type, payload)) => {
+                    let consumed = cursor.position() as usize;
+                    buffer.drain(..consumed);
+                    
                     match frame_type {
                         crate::relay_protocol::FrameType::Control => {
                             if let Ok(control_msg) = ControlMessage::decode(&payload) {
@@ -42,7 +51,7 @@ impl ProtocolEngine {
                         }
                     }
                 }
-                Err(_) => break, // Incomplete frame
+                Err(_) => break, // Incomplete frame, wait for more data
             }
         }
     }
@@ -146,7 +155,7 @@ impl ProtocolCallbacks {
 impl TransportCallbacks for ProtocolCallbacks {
     fn on_bytes_received(&mut self, data: &[u8]) {
         if let Ok(mut engine) = self.engine.lock() {
-            engine.on_bytes_received(self.conn_id, data);
+            engine.on_transport_bytes(self.conn_id, data);
         }
     }
     

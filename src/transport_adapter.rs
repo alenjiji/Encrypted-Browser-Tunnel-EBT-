@@ -5,10 +5,13 @@ use std::sync::Mutex;
 use std::thread;
 use std::collections::VecDeque;
 
+// NOTE: Thread-per-transport is an implementation detail, not a contract.
+// Later transports (SSH, QUIC) may use different scheduling models.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
     ConnectionLost,
-    WriteBlocked,
+    WriteBlocked, // NOTE: Currently maps both protocol and OS-level backpressure
     ReadError,
     Timeout,
 }
