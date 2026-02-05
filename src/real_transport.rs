@@ -294,62 +294,60 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
                 
                 tokio::select! {
                     result1 = &mut task1 => {
-                        // Cancel the other task
-                        task2.abort();
-                        
                         match result1 {
                             Ok(Ok((ip, tcp))) => {
                                 log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
                                      self.target_host, self.target_port, ip);
                                 
-                                // Cancel remaining attempts
-                                for task in tasks {
-                                    task.abort();
-                                }
-                                
                                 let std_stream = tcp.into_std().map_err(|e| {
                                     log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
                                     TransportError::ConnectionFailed
                                 })?;
                                 
                                 self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
+                                
+                                // Put remaining task back to complete naturally
+                                tasks.insert(0, task2);
                                 return Ok(());
                             }
                             Ok(Err(e)) => {
                                 last_error = Some(e);
+                                // Put the other task back to continue trying
+                                tasks.insert(0, task2);
                             }
                             Err(_) => {
                                 log!(LogLevel::Debug, "Connection task was cancelled");
+                                // Put the other task back to continue trying
+                                tasks.insert(0, task2);
                             }
                         }
                     }
                     result2 = &mut task2 => {
-                        // Cancel the other task
-                        task1.abort();
-                        
                         match result2 {
                             Ok(Ok((ip, tcp))) => {
                                 log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
                                      self.target_host, self.target_port, ip);
                                 
-                                // Cancel remaining attempts
-                                for task in tasks {
-                                    task.abort();
-                                }
-                                
                                 let std_stream = tcp.into_std().map_err(|e| {
                                     log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
                                     TransportError::ConnectionFailed
                                 })?;
                                 
                                 self.tcp_stream = Some(Arc::new(Mutex::new(std_stream)));
+                                
+                                // Put remaining task back to complete naturally
+                                tasks.insert(0, task1);
                                 return Ok(());
                             }
                             Ok(Err(e)) => {
                                 last_error = Some(e);
+                                // Put the other task back to continue trying
+                                tasks.insert(0, task1);
                             }
                             Err(_) => {
                                 log!(LogLevel::Debug, "Connection task was cancelled");
+                                // Put the other task back to continue trying
+                                tasks.insert(0, task1);
                             }
                         }
                     }
