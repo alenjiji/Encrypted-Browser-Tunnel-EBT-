@@ -28,6 +28,42 @@ pub enum ControlMessage {
     Error { conn_id: u32, code: u8 },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataFrame {
+    pub conn_id: u32,
+    pub payload: Vec<u8>,
+}
+
+impl DataFrame {
+    pub fn new(conn_id: u32, payload: Vec<u8>) -> Self {
+        Self { conn_id, payload }
+    }
+    
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(4 + self.payload.len());
+        buf.extend_from_slice(&self.conn_id.to_be_bytes());
+        buf.extend_from_slice(&self.payload);
+        buf
+    }
+    
+    pub fn decode(payload: &[u8]) -> Result<Self, std::io::Error> {
+        if payload.len() < 4 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Data payload too short",
+            ));
+        }
+        
+        let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+        let data = payload[4..].to_vec();
+        
+        Ok(DataFrame {
+            conn_id,
+            payload: data,
+        })
+    }
+}
+
 impl ControlMessage {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();
