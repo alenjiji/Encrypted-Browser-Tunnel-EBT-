@@ -17,12 +17,12 @@ impl LocalZoneInterface {
     }
 
     pub async fn initiate_tunnel(&mut self, _destination: DestinationHostname, _route: EncryptedRoute) -> Result<TrustSessionId, ZoneError> {
-        let session_id = SessionId("local-session".to_string());
+        let session_id = SessionId([0u8; 32]);
         Ok(TrustSessionId(format!("{:?}", session_id)))
     }
 
     pub async fn send_data(&self, _session_id: &TrustSessionId, plaintext: PlaintextPayload) -> Result<TrustEncryptedPayload, ZoneError> {
-        let control_session = SessionId("local-control".to_string());
+        let control_session = SessionId([0u8; 32]);
         let encrypted = self.tunnel_manager.encryptor.encrypt_payload(&control_session, &plaintext.0).await
             .map_err(|_| ZoneError::EncryptionFailed)?;
         Ok(TrustEncryptedPayload(encrypted.0))
@@ -55,7 +55,7 @@ impl EntryZoneInterface {
     }
 
     pub async fn forward_payload(&self, _session_id: &TrustSessionId, encrypted: TrustEncryptedPayload) -> Result<TrustEncryptedPayload, ZoneError> {
-        let control_session = SessionId("entry-control".to_string());
+        let control_session = SessionId([1u8; 32]);
         let data_encrypted = EncryptedPayload(encrypted.0);
         match self.tunnel_manager.process_inbound(&control_session, data_encrypted).await {
             Ok(ProcessResult::Forward(forwarded)) => Ok(TrustEncryptedPayload(forwarded.0)),
@@ -86,7 +86,7 @@ impl RelayZoneInterface {
     }
 
     pub async fn relay_payload(&self, _session_id: &TrustSessionId, encrypted: TrustEncryptedPayload) -> Result<TrustEncryptedPayload, ZoneError> {
-        let control_session = SessionId("relay-control".to_string());
+        let control_session = SessionId([2u8; 32]);
         let data_encrypted = EncryptedPayload(encrypted.0);
         match self.tunnel_manager.process_inbound(&control_session, data_encrypted).await {
             Ok(ProcessResult::Forward(forwarded)) => Ok(TrustEncryptedPayload(forwarded.0)),
@@ -119,7 +119,7 @@ impl ExitZoneInterface {
     }
 
     pub async fn terminate_tunnel(&self, _session_id: &TrustSessionId, encrypted: TrustEncryptedPayload) -> Result<PlaintextPayload, ZoneError> {
-        let control_session = SessionId("exit-control".to_string());
+        let control_session = SessionId([3u8; 32]);
         let data_encrypted = EncryptedPayload(encrypted.0);
         match self.tunnel_manager.process_inbound(&control_session, data_encrypted).await {
             Ok(ProcessResult::Deliver(plaintext)) => Ok(plaintext),

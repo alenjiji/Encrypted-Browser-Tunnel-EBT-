@@ -23,6 +23,7 @@ mod key_management;
 mod zone_interfaces;
 mod crypto_transport_tests;
 mod threat_model;
+mod traffic_shaping;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
@@ -47,6 +48,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 async fn tokio_main() -> Result<(), Box<dyn Error>> {
     println!("=== DIRECT CONNECT MODE (NO SSH) ===");
+    
+    // Phase 5 feature gate check
+    if traffic_shaping::PHASE_5_ENABLED {
+        println!("Phase 5 traffic shaping: ENABLED");
+        traffic_shaping::initialize_traffic_shaping();
+    } else {
+        println!("Phase 5 traffic shaping: DISABLED (Phase 4 invariants enforced)");
+    }
     
     // TEMPORARILY DISABLED FOR CONNECT DEBUGGING:
     // Create tunnel session with SSH SOCKS configuration
