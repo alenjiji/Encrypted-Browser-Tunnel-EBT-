@@ -3,6 +3,7 @@ use std::net::TcpStream;
 use std::io::{Write, Read};
 use std::sync::Mutex;
 use std::thread;
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
@@ -15,12 +16,91 @@ pub enum TransportError {
 pub trait TransportAdapter: Send + Sync {
     fn send_bytes(&mut self, data: &[u8]) -> Result<(), TransportError>;
     fn close_transport(&mut self);
-    fn start_reading(&mut self, callbacks: Arc<dyn TransportCallbacks>);
+    fn start_reading(&mut self, callbacks: Arc<Mutex<dyn TransportCallbacks>>);
 }
 
 pub trait TransportCallbacks: Send + Sync {
     fn on_bytes_received(&mut self, data: &[u8]);
     fn on_transport_error(&mut self, error: TransportError);
+}
+
+pub struct FakeTransportAdapter {
+    outbound_queue: Arc<Mutex<VecDeque<u8>>>,
+    inbound_queue: Arc<Mutex<VecDeque<u8>>>,
+    closed: Arc<Mutex<bool>>,
+}
+
+impl FakeTransportAdapter {
+    pub fn new() -> Self {
+        Self {
+            outbound_queue: Arc::new(Mutex::new(VecDeque::new())),
+            inbound_queue: Arc::new(Mutex::new(VecDeque::new())),
+            closed: Arc::new(Mutex::new(false)),
+        }
+    }
+    
+    pub fn inject_bytes(&self, data: &[u8]) {
+        if let Ok(mut queue) = self.inbound_queue.lock() {
+            queue.extend(data);
+        }
+    }
+    
+    pub fn drain_outbound(&self) -> Vec<u8> {
+        if let Ok(mut queue) = self.outbound_queue.lock() {
+            queue.drain(..).collect()
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+impl TransportAdapter for FakeTransportAdapter {
+    fn send_bytes(&mut self, data: &[u8]) -> Result<(), TransportError> {
+        if *self.closed.lock().unwrap() {
+            return Err(TransportError::ConnectionLost);
+        }
+        
+        if let Ok(mut queue) = self.outbound_queue.lock() {
+            queue.extend(data);
+            Ok(())
+        } else {
+            Err(TransportError::WriteBlocked)
+        }
+    }
+    
+    fn start_reading(&mut self, callbacks: Arc<Mutex<dyn TransportCallbacks>>) {
+        let inbound_queue = Arc::clone(&self.inbound_queue);
+        let closed = Arc::clone(&self.closed);
+        
+        thread::spawn(move || {
+            let mut buffer = Vec::new();
+            
+            loop {
+                if *closed.lock().unwrap() {
+                    break;
+                }
+                
+                {
+                    if let Ok(mut queue) = inbound_queue.lock() {
+                        buffer.extend(queue.drain(..));
+                    }
+                }
+                
+                if !buffer.is_empty() {
+                    if let Ok(mut cb) = callbacks.lock() {
+                        cb.on_bytes_received(&buffer);
+                    }
+                    buffer.clear();
+                }
+                
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        });
+    }
+    
+    fn close_transport(&mut self) {
+        *self.closed.lock().unwrap() = true;
+    }
 }
 
 pub struct TransportHandle {
@@ -86,7 +166,7 @@ impl TransportAdapter for TcpTransportAdapter {
         }
     }
     
-    fn start_reading(&mut self, callbacks: Arc<dyn TransportCallbacks>) {
+    fn start_reading(&mut self, callbacks: Arc<Mutex<dyn TransportCallbacks>>) {
         let stream = Arc::clone(&self.stream);
         
         thread::spawn(move || {
@@ -100,13 +180,7 @@ impl TransportAdapter for TcpTransportAdapter {
                     };
                     
                     match stream.read(&mut buffer) {
-                        Ok(0) => {
-                            // EOF - connection closed
-                            let mut cb = callbacks.as_ref();
-                            // SAFETY: We need mutable access but Arc<dyn Trait> doesn't allow it
-                            // This is a design limitation we'll address later
-                            break;
-                        }
+                        Ok(0) => break, // EOF
                         Ok(n) => n,
                         Err(e) => {
                             let error = match e.kind() {
@@ -114,15 +188,17 @@ impl TransportAdapter for TcpTransportAdapter {
                                 std::io::ErrorKind::TimedOut => TransportError::Timeout,
                                 _ => TransportError::ReadError,
                             };
-                            // Same mutable access issue here
+                            if let Ok(mut cb) = callbacks.lock() {
+                                cb.on_transport_error(error);
+                            }
                             break;
                         }
                     }
                 };
                 
-                // Forward bytes immediately without interpretation
-                // Note: This has the mutable callback issue that needs resolution
-                // callbacks.on_bytes_received(&buffer[..bytes_read]);
+                if let Ok(mut cb) = callbacks.lock() {
+                    cb.on_bytes_received(&buffer[..bytes_read]);
+                }
             }
         });
     }
