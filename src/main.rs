@@ -24,6 +24,7 @@ mod zone_interfaces;
 mod crypto_transport_tests;
 mod threat_model;
 mod traffic_shaping;
+mod relay_protocol;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
