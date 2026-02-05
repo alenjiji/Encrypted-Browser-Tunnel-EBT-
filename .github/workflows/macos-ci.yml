@@ -36,6 +36,7 @@ jobs:
           test.log
     
     - name: Run Phase 4 threat invariant checks
+      if: success()
       run: |
         chmod +x scripts/check_phase4_invariants.sh
         scripts/check_phase4_invariants.sh
