@@ -14,7 +14,7 @@ use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
 use crate::logging::LogLevel;
 use crate::log;
-use crate::traffic_shaping;
+use crate::traffic_shaping::{self, ConnectionState};
 #[cfg(feature = "single_hop_relay")]
 use crate::relay_transport::SingleHopRelayTransport;
 #[cfg(feature = "multi_hop_relay")]
@@ -179,6 +179,7 @@ impl DirectTcpTunnelTransport {
     /// Forward data directly between streams with metrics (no mutex)
     fn forward_data_with_metrics(mut src: TcpStream, mut dst: TcpStream, byte_counter: Arc<AtomicU64>) -> Result<(), TransportError> {
         let mut buf = [0u8; 65536]; // 64KB buffer
+        let mut shaping_state = ConnectionState::default();
         loop {
             match src.read(&mut buf) {
                 Ok(0) => {
@@ -188,7 +189,7 @@ impl DirectTcpTunnelTransport {
                 }
                 Ok(n) => {
                     // Apply traffic shaping hook before writing to socket
-                    let shaped_data = traffic_shaping::shape_outbound_data(&buf[..n]);
+                    let shaped_data = traffic_shaping::shape_outbound_data(&buf[..n], &mut shaping_state);
                     if let Err(_) = dst.write_all(&shaped_data) {
                         return Ok(());
                     }
