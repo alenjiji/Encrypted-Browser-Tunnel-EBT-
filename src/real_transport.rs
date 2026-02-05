@@ -239,7 +239,7 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
                          self.target_host, self.target_port, ip);
                     
                     let std_stream = tcp.into_std().map_err(|e| {
-                        log!(LogLevel::Error, "Failed to convert tokio stream to std: {}", e);
+                        log!(LogLevel::Debug, "Failed to convert tokio stream to std: {}", e);
                         TransportError::ConnectionFailed
                     })?;
                     
