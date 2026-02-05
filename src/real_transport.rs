@@ -14,6 +14,7 @@ use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
 use crate::logging::LogLevel;
 use crate::log;
+use crate::traffic_shaping;
 #[cfg(feature = "single_hop_relay")]
 use crate::relay_transport::SingleHopRelayTransport;
 #[cfg(feature = "multi_hop_relay")]
@@ -186,7 +187,9 @@ impl DirectTcpTunnelTransport {
                     return Ok(());
                 }
                 Ok(n) => {
-                    if let Err(_) = dst.write_all(&buf[..n]) {
+                    // Apply traffic shaping hook before writing to socket
+                    let shaped_data = traffic_shaping::shape_outbound_data(&buf[..n]);
+                    if let Err(_) = dst.write_all(shaped_data) {
                         return Ok(());
                     }
                     byte_counter.fetch_add(n as u64, Ordering::Relaxed);

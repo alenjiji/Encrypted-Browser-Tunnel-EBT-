@@ -19,3 +19,17 @@ pub fn initialize_traffic_shaping() {
 pub fn initialize_traffic_shaping() {
     // No-op when Phase 5 is disabled
 }
+
+/// Traffic shaping hook called before writing encrypted data to socket
+#[cfg(feature = "phase_5_traffic_shaping")]
+pub fn shape_outbound_data(data: &[u8]) -> &[u8] {
+    // Phase 5 traffic shaping logic will go here
+    // Currently a no-op pass-through
+    data
+}
+
+#[cfg(not(feature = "phase_5_traffic_shaping"))]
+pub fn shape_outbound_data(data: &[u8]) -> &[u8] {
+    // No-op when Phase 5 is disabled
+    data
+}
