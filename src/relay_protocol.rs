@@ -46,6 +46,8 @@ pub struct RelayMetrics {
 struct ConnectionInfo {
     state: ConnectionState,
     buffered_bytes: usize,
+    send_window: u32,
+    initial_window_size: u32,
 }
 
 pub struct ConnectionTable {
@@ -53,6 +55,7 @@ pub struct ConnectionTable {
     inflight_opens: usize,
     limits: RelayLimits,
     metrics: RelayMetrics,
+    default_window_size: u32,
 }
 
 impl ConnectionTable {
@@ -62,7 +65,12 @@ impl ConnectionTable {
             inflight_opens: 0,
             limits,
             metrics: RelayMetrics::default(),
+            default_window_size: 65536, // 64KB default window
         }
+    }
+    
+    pub fn set_default_window_size(&mut self, size: u32) {
+        self.default_window_size = size;
     }
     
     pub fn open_connection(&mut self, conn_id: u32) -> Result<(), &'static str> {
@@ -81,11 +89,73 @@ impl ConnectionTable {
                 self.connections.insert(conn_id, ConnectionInfo {
                     state: ConnectionState::Open,
                     buffered_bytes: 0,
+                    send_window: self.default_window_size,
+                    initial_window_size: self.default_window_size,
                 });
                 self.inflight_opens += 1;
                 Ok(())
             }
             Some(_) => Err("Connection already exists"),
+        }
+    }
+    
+    pub fn can_send_data(&self, conn_id: u32, data_size: u32) -> bool {
+        match self.connections.get(&conn_id) {
+            Some(info) => {
+                info.state == ConnectionState::Open && info.send_window >= data_size
+            }
+            None => false,
+        }
+    }
+    
+    pub fn consume_send_credits(&mut self, conn_id: u32, data_size: u32) -> Result<(), &'static str> {
+        if let Some(info) = self.connections.get_mut(&conn_id) {
+            if info.send_window >= data_size {
+                info.send_window -= data_size;
+                Ok(())
+            } else {
+                Err("Insufficient send credits")
+            }
+        } else {
+            Err("Connection not found")
+        }
+    }
+    
+    pub fn add_send_credits(&mut self, conn_id: u32, credits: u32) -> Result<(), &'static str> {
+        if let Some(info) = self.connections.get_mut(&conn_id) {
+            // Prevent window overflow
+            let max_window = info.initial_window_size * 2;
+            let new_window = info.send_window.saturating_add(credits).min(max_window);
+            info.send_window = new_window;
+            Ok(())
+        } else {
+            Err("Connection not found")
+        }
+    }
+    
+    pub fn get_send_window(&self, conn_id: u32) -> Option<u32> {
+        self.connections.get(&conn_id).map(|info| info.send_window)
+    }
+    
+    pub fn should_send_window_update(&self, conn_id: u32) -> bool {
+        if let Some(info) = self.connections.get(&conn_id) {
+            // Send window update when window drops below 25% of initial size
+            info.send_window < (info.initial_window_size / 4)
+        } else {
+            false
+        }
+    }
+    
+    pub fn calculate_window_update(&self, conn_id: u32) -> Option<u32> {
+        if let Some(info) = self.connections.get(&conn_id) {
+            if self.should_send_window_update(conn_id) {
+                // Restore to initial window size
+                Some(info.initial_window_size - info.send_window)
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
     
