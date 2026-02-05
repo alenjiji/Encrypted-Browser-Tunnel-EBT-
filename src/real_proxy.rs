@@ -78,26 +78,24 @@ impl RealProxyServer {
     
     /// Handle a single client connection
     async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
-        // Read HTTP request headers only (until \r\n\r\n)
+        // Read HTTP request headers in chunks until \r\n\r\n
         let mut buffer = Vec::new();
-        let mut temp_buf = [0u8; 1];
+        let mut chunk_buf = [0u8; 4096]; // 4KB chunks
         let mut header_end = 0;
         
-        // Read byte by byte until we find \r\n\r\n
+        // Read in chunks until we find \r\n\r\n
         loop {
-            let bytes_read = stream.read(&mut temp_buf)?;
+            let bytes_read = stream.read(&mut chunk_buf)?;
             if bytes_read == 0 {
                 break; // EOF
             }
-            buffer.push(temp_buf[0]);
             
-            // Check for \r\n\r\n pattern
-            if buffer.len() >= 4 {
-                let len = buffer.len();
-                if &buffer[len-4..len] == b"\r\n\r\n" {
-                    header_end = len;
-                    break;
-                }
+            buffer.extend_from_slice(&chunk_buf[..bytes_read]);
+            
+            // Check for \r\n\r\n pattern in the buffer
+            if let Some(pos) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+                header_end = pos + 4;
+                break;
             }
         }
         
@@ -105,16 +103,11 @@ impl RealProxyServer {
             return Ok(());
         }
         
-        // Read any remaining bytes that might be TLS data
+        // Extract any data beyond headers (potential TLS data)
         let mut leftover_bytes = Vec::new();
-        let mut remaining_buf = [0u8; 4096];
-        stream.set_nonblocking(true).ok();
-        if let Ok(n) = stream.read(&mut remaining_buf) {
-            if n > 0 {
-                leftover_bytes.extend_from_slice(&remaining_buf[..n]);
-            }
+        if buffer.len() > header_end {
+            leftover_bytes.extend_from_slice(&buffer[header_end..]);
         }
-        stream.set_nonblocking(false).ok();
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
         
