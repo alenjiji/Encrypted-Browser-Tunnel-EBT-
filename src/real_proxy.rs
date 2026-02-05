@@ -103,12 +103,6 @@ impl RealProxyServer {
             return Ok(());
         }
         
-        // Extract any data beyond headers (potential TLS data)
-        let mut leftover_bytes = Vec::new();
-        if buffer.len() > header_end {
-            leftover_bytes.extend_from_slice(&buffer[header_end..]);
-        }
-        
         let request = String::from_utf8_lossy(&buffer[..header_end]);
         
         if request.starts_with("GET ") {
@@ -169,16 +163,6 @@ impl RealProxyServer {
                 Err(e) => {
                     log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
                     return Err(e.into());
-                }
-            }
-            
-            // Forward any leftover bytes (TLS ClientHello) to target before tunneling
-            if !leftover_bytes.is_empty() {
-                if let Some(target_stream) = transport.get_tcp_stream() {
-                    if let Ok(mut target) = target_stream.lock() {
-                        let _ = target.write_all(&leftover_bytes);
-                        let _ = target.flush();
-                    }
                 }
             }
             
