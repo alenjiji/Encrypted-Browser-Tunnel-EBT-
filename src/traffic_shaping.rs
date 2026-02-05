@@ -27,6 +27,7 @@ pub fn initialize_traffic_shaping() {
 pub struct ConnectionState {
     last_write: Option<Instant>,
     burst_count: u32,
+    smoothing_enabled: bool,
 }
 
 /// Traffic shaping hook called before writing encrypted data to socket
@@ -35,7 +36,6 @@ pub fn shape_outbound_data(data: &[u8], state: &mut ConnectionState) -> Vec<u8> 
     const BUCKET_SIZES: &[usize] = &[512, 1024, 1440];
     const MAX_PADDING: usize = 64;
     const BURST_WINDOW: Duration = Duration::from_millis(2);
-    const MAX_DELAY: Duration = Duration::from_millis(2);
     const SUSTAINED_THRESHOLD: u32 = 5;
     
     let data_len = data.len();
@@ -49,35 +49,30 @@ pub fn shape_outbound_data(data: &[u8], state: &mut ConnectionState) -> Vec<u8> 
     
     // Micro-burst detection
     let now = Instant::now();
-    let should_delay = if let Some(last) = state.last_write {
+    if let Some(last) = state.last_write {
         let elapsed = now.duration_since(last);
         if elapsed < BURST_WINDOW {
             state.burst_count += 1;
-            state.burst_count < SUSTAINED_THRESHOLD
+            if state.burst_count >= SUSTAINED_THRESHOLD {
+                state.smoothing_enabled = false;
+            }
         } else {
             state.burst_count = 0;
-            false
+            state.smoothing_enabled = true;
         }
     } else {
-        false
-    };
-    
-    // Non-blocking delay for micro-bursts only
-    if should_delay {
-        let delay_start = Instant::now();
-        while delay_start.elapsed() < MAX_DELAY {
-            std::hint::spin_loop();
-        }
+        state.smoothing_enabled = true;
     }
     
     state.last_write = Some(now);
     
-    // Packet size bucketing
+    // Packet size bucketing with burst-aware padding suppression
     for &bucket_size in BUCKET_SIZES {
         if data_len <= bucket_size {
             let padding_needed = bucket_size - data_len;
             
-            if padding_needed <= MAX_PADDING {
+            // Suppress padding during micro-bursts for smoothing
+            if padding_needed <= MAX_PADDING && (state.smoothing_enabled || state.burst_count == 0) {
                 let mut padded = Vec::with_capacity(bucket_size);
                 padded.extend_from_slice(data);
                 padded.resize(bucket_size, 0);
