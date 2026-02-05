@@ -14,11 +14,8 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
-    - name: Install system dependencies
+    - name: Set ICU environment variables
       run: |
-        command -v brew >/dev/null || exit 1
-        export HOMEBREW_NO_AUTO_UPDATE=1
-        brew install icu4c pkg-config
         echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
         echo "LDFLAGS=-L$(brew --prefix icu4c)/lib" >> $GITHUB_ENV
         echo "CPPFLAGS=-I$(brew --prefix icu4c)/include" >> $GITHUB_ENV
