@@ -4,13 +4,13 @@ use crate::relay_protocol::{
     FrameEncoder, FrameDecoder, ControlMessage, DataFrame, 
     ConnectionTable, RelayLimits, ProtocolNegotiator
 };
-use crate::transport_adapter::{TransportAdapter, TransportCallbacks, TransportError};
+use crate::transport_adapter::{TransportCallbacks, TransportError};
 use std::io::Cursor;
 
 pub struct ProtocolEngine {
     connection_table: ConnectionTable,
     negotiator: ProtocolNegotiator,
-    transports: HashMap<u32, Box<dyn TransportAdapter>>,
+    outbound_frames: HashMap<u32, Vec<Vec<u8>>>,
 }
 
 impl ProtocolEngine {
@@ -18,137 +18,139 @@ impl ProtocolEngine {
         Self {
             connection_table: ConnectionTable::new(limits),
             negotiator: ProtocolNegotiator::new(),
-            transports: HashMap::new(),
+            outbound_frames: HashMap::new(),
         }
     }
     
-    pub fn add_transport(&mut self, conn_id: u32, transport: Box<dyn TransportAdapter>) {
-        self.transports.insert(conn_id, transport);
-    }
-    
-    pub fn send_control_message(&mut self, conn_id: u32, message: ControlMessage) -> Result<(), TransportError> {
-        if let Some(transport) = self.transports.get_mut(&conn_id) {
-            let payload = message.encode();
-            let mut buffer = Vec::new();
-            FrameEncoder::encode_frame(
-                &mut buffer, 
-                1, // protocol version
-                crate::relay_protocol::FrameType::Control, 
-                &payload
-            ).map_err(|_| TransportError::WriteBlocked)?;
-            
-            transport.send_bytes(&buffer)
-        } else {
-            Err(TransportError::ConnectionLost)
+    pub fn on_bytes_received(&mut self, conn_id: u32, data: &[u8]) {
+        // Parse frames from raw bytes
+        let mut cursor = Cursor::new(data);
+        
+        while cursor.position() < data.len() as u64 {
+            match FrameDecoder::decode_frame(&mut cursor) {
+                Ok((version, frame_type, payload)) => {
+                    match frame_type {
+                        crate::relay_protocol::FrameType::Control => {
+                            if let Ok(control_msg) = ControlMessage::decode(&payload) {
+                                self.process_control_message(conn_id, control_msg);
+                            }
+                        }
+                        crate::relay_protocol::FrameType::Data => {
+                            if let Ok(data_frame) = DataFrame::decode(&payload) {
+                                self.process_data_frame(data_frame);
+                            }
+                        }
+                    }
+                }
+                Err(_) => break, // Incomplete frame
+            }
         }
     }
     
-    pub fn send_data_frame(&mut self, conn_id: u32, data: &[u8]) -> Result<(), TransportError> {
+    pub fn next_outbound_frame(&mut self, conn_id: u32) -> Option<Vec<u8>> {
+        self.outbound_frames.get_mut(&conn_id)?.pop()
+    }
+    
+    pub fn queue_control_message(&mut self, conn_id: u32, message: ControlMessage) {
+        let payload = message.encode();
+        let mut buffer = Vec::new();
+        if FrameEncoder::encode_frame(
+            &mut buffer, 
+            1, // protocol version
+            crate::relay_protocol::FrameType::Control, 
+            &payload
+        ).is_ok() {
+            self.outbound_frames.entry(conn_id).or_insert_with(Vec::new).push(buffer);
+        }
+    }
+    
+    pub fn queue_data_frame(&mut self, conn_id: u32, data: &[u8]) -> Result<(), &'static str> {
         if !self.connection_table.can_send_data(conn_id, data.len() as u32) {
-            return Err(TransportError::WriteBlocked);
+            return Err("Insufficient credits");
         }
         
-        if let Some(transport) = self.transports.get_mut(&conn_id) {
-            let frame = DataFrame::new(conn_id, data.to_vec());
-            let payload = frame.encode();
-            let mut buffer = Vec::new();
-            FrameEncoder::encode_frame(
-                &mut buffer,
-                1, // protocol version
-                crate::relay_protocol::FrameType::Data,
-                &payload
-            ).map_err(|_| TransportError::WriteBlocked)?;
-            
-            self.connection_table.consume_send_credits(conn_id, data.len() as u32)
-                .map_err(|_| TransportError::WriteBlocked)?;
-            
-            transport.send_bytes(&buffer)
+        let frame = DataFrame::new(conn_id, data.to_vec());
+        let payload = frame.encode();
+        let mut buffer = Vec::new();
+        
+        if FrameEncoder::encode_frame(
+            &mut buffer,
+            1, // protocol version
+            crate::relay_protocol::FrameType::Data,
+            &payload
+        ).is_ok() {
+            self.connection_table.consume_send_credits(conn_id, data.len() as u32)?;
+            self.outbound_frames.entry(conn_id).or_insert_with(Vec::new).push(buffer);
+            Ok(())
         } else {
-            Err(TransportError::ConnectionLost)
-        }
-    }
-    
-    pub fn close_transport(&mut self, conn_id: u32) {
-        if let Some(mut transport) = self.transports.remove(&conn_id) {
-            transport.close_transport();
+            Err("Frame encoding failed")
         }
     }
     
     pub fn poll_control_frames(&mut self) -> Vec<(u32, ControlMessage)> {
         let frames = self.connection_table.poll_control_frames();
+        for frame in &frames {
+            let conn_id = match frame {
+                ControlMessage::Open { conn_id, .. } => *conn_id,
+                ControlMessage::Close { conn_id, .. } => *conn_id,
+                ControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
+                ControlMessage::Error { conn_id, .. } => *conn_id,
+                ControlMessage::Hello { .. } => 0,
+            };
+            self.queue_control_message(conn_id, frame.clone());
+        }
         frames.into_iter().map(|msg| {
             let conn_id = match &msg {
                 ControlMessage::Open { conn_id, .. } => *conn_id,
                 ControlMessage::Close { conn_id, .. } => *conn_id,
                 ControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
                 ControlMessage::Error { conn_id, .. } => *conn_id,
-                ControlMessage::Hello { .. } => 0, // Special case for handshake
+                ControlMessage::Hello { .. } => 0,
             };
             (conn_id, msg)
         }).collect()
+    }
+    
+    fn process_control_message(&mut self, conn_id: u32, message: ControlMessage) {
+        match message {
+            ControlMessage::Open { target_host, target_port, .. } => {
+                let _ = self.connection_table.open_connection(conn_id);
+            }
+            ControlMessage::Close { reason, .. } => {
+                let _ = self.connection_table.close_connection(conn_id);
+            }
+            ControlMessage::WindowUpdate { credits, .. } => {
+                let _ = self.connection_table.add_send_credits(conn_id, credits);
+            }
+            _ => {}
+        }
+    }
+    
+    fn process_data_frame(&mut self, frame: DataFrame) {
+        // Forward data frame to appropriate connection
+        // Implementation depends on specific relay logic
     }
 }
 
 pub struct ProtocolCallbacks {
     engine: Arc<Mutex<ProtocolEngine>>,
     conn_id: u32,
-    frame_buffer: Vec<u8>,
 }
 
 impl ProtocolCallbacks {
     pub fn new(engine: Arc<Mutex<ProtocolEngine>>, conn_id: u32) -> Self {
-        Self {
-            engine,
-            conn_id,
-            frame_buffer: Vec::new(),
-        }
+        Self { engine, conn_id }
     }
 }
 
 impl TransportCallbacks for ProtocolCallbacks {
     fn on_bytes_received(&mut self, data: &[u8]) {
-        // Accumulate bytes for frame parsing
-        self.frame_buffer.extend_from_slice(data);
-        
-        // Try to parse complete frames
-        while self.frame_buffer.len() >= 6 { // Minimum frame size
-            let mut cursor = Cursor::new(&self.frame_buffer);
-            
-            match FrameDecoder::decode_frame(&mut cursor) {
-                Ok((version, frame_type, payload)) => {
-                    let consumed = cursor.position() as usize;
-                    self.frame_buffer.drain(..consumed);
-                    
-                    // Process frame based on type
-                    match frame_type {
-                        crate::relay_protocol::FrameType::Control => {
-                            if let Ok(control_msg) = ControlMessage::decode(&payload) {
-                                // Protocol engine processes control message
-                                // (Implementation would handle specific control logic)
-                            }
-                        }
-                        crate::relay_protocol::FrameType::Data => {
-                            if let Ok(data_frame) = DataFrame::decode(&payload) {
-                                // Protocol engine processes data frame
-                                // (Implementation would forward to appropriate connection)
-                            }
-                        }
-                    }
-                }
-                Err(_) => {
-                    // Not enough data for complete frame, wait for more
-                    break;
-                }
-            }
+        if let Ok(mut engine) = self.engine.lock() {
+            engine.on_bytes_received(self.conn_id, data);
         }
     }
     
     fn on_transport_error(&mut self, error: TransportError) {
-        // Transport error does NOT auto-close protocol state
-        // Protocol engine decides how to handle transport failures
-        if let Ok(mut engine) = self.engine.lock() {
-            // Log transport error but don't change connection state
-            // Protocol maintains authority over connection lifecycle
-        }
+        // Transport error notification - protocol decides response
     }
 }
