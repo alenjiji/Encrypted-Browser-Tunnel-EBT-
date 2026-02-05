@@ -241,7 +241,7 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
                     return Ok(());
                 }
                 Err(e) => {
-                    log!(LogLevel::Debug, "Connection failed to {}: {}", ip, e);
+                    log!(LogLevel::Trace, "Connection failed to {}: {}", ip, e);
                     last_error = Some(e);
                 }
             }
