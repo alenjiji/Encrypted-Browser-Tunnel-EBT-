@@ -108,13 +108,13 @@ impl TransportAdapter for FakeTransportAdapter {
 
 pub struct TransportHandle {
     adapter: Box<dyn TransportAdapter>,
-    callbacks: Arc<dyn TransportCallbacks>,
+    callbacks: Arc<Mutex<dyn TransportCallbacks>>,
 }
 
 impl TransportHandle {
     pub fn new(
         adapter: Box<dyn TransportAdapter>,
-        callbacks: Arc<dyn TransportCallbacks>,
+        callbacks: Arc<Mutex<dyn TransportCallbacks>>,
     ) -> Self {
         Self { adapter, callbacks }
     }

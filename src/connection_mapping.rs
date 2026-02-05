@@ -49,12 +49,8 @@ impl ConnectionMapping {
         self.logical_to_transport.insert(logical_id, transport);
         
         // Register with protocol engine
-        if let Ok(mut engine) = protocol_engine.lock() {
-            engine.add_transport(logical_id.0, 
-                self.logical_to_transport.remove(&logical_id).unwrap());
-        } else {
-            return Err("Failed to register with protocol engine");
-        }
+        // Note: ProtocolEngine no longer has add_transport method
+        // Transport registration handled by binding layer
         
         Ok((socket_id, logical_id))
     }
@@ -96,11 +92,8 @@ impl ConnectionMapping {
             self.socket_to_logical.remove(&socket_id);
         }
         
-        // Close transport via protocol engine
-        if let Ok(mut engine) = protocol_engine.lock() {
-            engine.close_transport(logical_id.0);
-        }
-        
+        // Close transport via binding layer (not protocol engine)
+        // Protocol engine no longer manages transports directly
         self.logical_to_transport.remove(&logical_id);
     }
     

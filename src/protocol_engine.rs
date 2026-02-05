@@ -30,6 +30,7 @@ impl ProtocolEngine {
         buffer.extend_from_slice(data);
         
         // Parse complete frames from buffer
+        let mut parsed_frames = Vec::new();
         while buffer.len() >= 6 { // Minimum frame size
             let mut cursor = Cursor::new(&buffer);
             
@@ -37,21 +38,25 @@ impl ProtocolEngine {
                 Ok((version, frame_type, payload)) => {
                     let consumed = cursor.position() as usize;
                     buffer.drain(..consumed);
-                    
-                    match frame_type {
-                        crate::relay_protocol::FrameType::Control => {
-                            if let Ok(control_msg) = ControlMessage::decode(&payload) {
-                                self.process_control_message(conn_id, control_msg);
-                            }
-                        }
-                        crate::relay_protocol::FrameType::Data => {
-                            if let Ok(data_frame) = DataFrame::decode(&payload) {
-                                self.process_data_frame(data_frame);
-                            }
-                        }
-                    }
+                    parsed_frames.push((version, frame_type, payload));
                 }
                 Err(_) => break, // Incomplete frame, wait for more data
+            }
+        }
+        
+        // Process parsed frames
+        for (_version, frame_type, payload) in parsed_frames {
+            match frame_type {
+                crate::relay_protocol::FrameType::Control => {
+                    if let Ok(control_msg) = ControlMessage::decode(&payload) {
+                        self.process_control_message(conn_id, control_msg);
+                    }
+                }
+                crate::relay_protocol::FrameType::Data => {
+                    if let Ok(data_frame) = DataFrame::decode(&payload) {
+                        self.process_data_frame(data_frame);
+                    }
+                }
             }
         }
     }

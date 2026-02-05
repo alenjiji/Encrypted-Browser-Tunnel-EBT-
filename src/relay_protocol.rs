@@ -130,12 +130,15 @@ impl ConnectionTable {
     /// This method generates control frames that MUST be sent to maintain protocol correctness.
     pub fn poll_control_frames(&mut self) -> Vec<ControlMessage> {
         let mut frames = Vec::new();
+        let conn_ids: Vec<u32> = self.connections.keys().copied().collect();
         
-        for (&conn_id, info) in &mut self.connections {
+        for conn_id in conn_ids {
             if let Some(credits) = self.calculate_window_update(conn_id) {
                 frames.push(ControlMessage::WindowUpdate { conn_id, credits });
                 // Update window immediately to prevent duplicate updates
-                info.send_window = info.send_window.saturating_add(credits).min(info.initial_window_size * 2);
+                if let Some(info) = self.connections.get_mut(&conn_id) {
+                    info.send_window = info.send_window.saturating_add(credits).min(info.initial_window_size * 2);
+                }
             }
         }
         
@@ -212,7 +215,6 @@ impl ConnectionTable {
     
     pub fn add_send_credits(&mut self, conn_id: u32, credits: u32) -> Result<(), &'static str> {
         if let Some(info) = self.connections.get_mut(&conn_id) {
-            // Prevent window overflow
             let max_window = info.initial_window_size * 2;
             let new_window = info.send_window.saturating_add(credits).min(max_window);
             info.send_window = new_window;
@@ -222,23 +224,9 @@ impl ConnectionTable {
         }
     }
     
-    pub fn get_send_window(&self, conn_id: u32) -> Option<u32> {
-        self.connections.get(&conn_id).map(|info| info.send_window)
-    }
-    
-    pub fn should_send_window_update(&self, conn_id: u32) -> bool {
-        if let Some(info) = self.connections.get(&conn_id) {
-            // Send window update when window drops below 25% of initial size
-            info.send_window < (info.initial_window_size / 4)
-        } else {
-            false
-        }
-    }
-    
     pub fn calculate_window_update(&self, conn_id: u32) -> Option<u32> {
         if let Some(info) = self.connections.get(&conn_id) {
-            if self.should_send_window_update(conn_id) {
-                // Restore to initial window size
+            if info.send_window < (info.initial_window_size / 4) {
                 Some(info.initial_window_size - info.send_window)
             } else {
                 None
@@ -261,14 +249,6 @@ impl ConnectionTable {
             }
             None => Err("Connection not found"),
         }
-    }
-    
-    pub fn finalize_close(&mut self, conn_id: u32) {
-        self.connections.remove(&conn_id);
-    }
-    
-    pub fn can_send_data(&self, conn_id: u32) -> bool {
-        matches!(self.connections.get(&conn_id), Some(info) if info.state == ConnectionState::Open)
     }
     
     pub fn add_buffered_bytes(&mut self, conn_id: u32, bytes: usize) -> Result<(), &'static str> {
