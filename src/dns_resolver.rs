@@ -105,40 +105,56 @@ impl DnsResolver for DohResolver {
             hostname
         );
         
-        let response = self.client
-            .get(&url)
-            .header("Accept", "application/dns-json")
-            .send()
-            .await
-            .map_err(|_| DnsError::ResolutionFailed)?
-            .json::<DohResponse>()
-            .await
-            .map_err(|_| DnsError::ResolutionFailed)?;
-        
-        let mut ips = Vec::new();
-        let mut min_ttl = 300u32;
-        
-        if let Some(answers) = response.answer {
-            for answer in answers {
-                if let Ok(ip) = answer.data.parse::<IpAddr>() {
-                    ips.push(ip);
-                    min_ttl = min_ttl.min(answer.ttl);
+        // Attempt DoH resolution with timeout and retry
+        let mut last_error = None;
+        for attempt in 0..2 {
+            let response_result = self.client
+                .get(&url)
+                .header("Accept", "application/dns-json")
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await;
+            
+            let response = match response_result {
+                Ok(resp) => match resp.json::<DohResponse>().await {
+                    Ok(json) => json,
+                    Err(e) => {
+                        last_error = Some(e);
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    last_error = Some(e);
+                    continue;
                 }
+            };
+            
+            let mut ips = Vec::new();
+            let mut min_ttl = 300u32;
+            
+            if let Some(answers) = response.answer {
+                for answer in answers {
+                    if let Ok(ip) = answer.data.parse::<IpAddr>() {
+                        ips.push(ip);
+                        min_ttl = min_ttl.min(answer.ttl);
+                    }
+                }
+            }
+            
+            if !ips.is_empty() {
+                self.cache_result(hostname, ips.clone(), min_ttl);
+                return Ok(ips);
             }
         }
         
-        if ips.is_empty() {
-            #[cfg(feature = "doh_fallback")]
-            {
-                self.fallback.resolve(hostname).await
-            }
-            #[cfg(not(feature = "doh_fallback"))]
-            {
-                Err(DnsError::ResolutionFailed)
-            }
-        } else {
-            self.cache_result(hostname, ips.clone(), min_ttl);
-            Ok(ips)
+        // All attempts failed
+        #[cfg(feature = "doh_fallback")]
+        {
+            self.fallback.resolve(hostname).await
+        }
+        #[cfg(not(feature = "doh_fallback"))]
+        {
+            Err(DnsError::ResolutionFailed)
         }
     }
 }
