@@ -16,6 +16,7 @@ jobs:
     
     - name: Install system dependencies
       run: |
+        command -v brew >/dev/null || exit 1
         export HOMEBREW_NO_AUTO_UPDATE=1
         brew install icu4c pkg-config
         echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
