@@ -25,45 +25,6 @@ pub enum ControlOpcode {
 const PROTOCOL_VERSION_1: u8 = 1;
 const SUPPORTED_VERSIONS: &[u8] = &[PROTOCOL_VERSION_1];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HelloMessage {
-    pub version: u8,
-    pub capability_flags: u32,
-}
-
-impl HelloMessage {
-    pub fn new(version: u8, capability_flags: u32) -> Self {
-        Self { version, capability_flags }
-    }
-    
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(5);
-        buf.push(self.version);
-        buf.extend_from_slice(&self.capability_flags.to_be_bytes());
-        buf
-    }
-    
-    pub fn decode(payload: &[u8]) -> Result<Self, std::io::Error> {
-        if payload.len() < 5 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Hello payload too short",
-            ));
-        }
-        
-        let version = payload[0];
-        let capability_flags = u32::from_be_bytes([
-            payload[1], payload[2], payload[3], payload[4]
-        ]);
-        
-        Ok(HelloMessage { version, capability_flags })
-    }
-    
-    pub fn is_version_supported(&self) -> bool {
-        SUPPORTED_VERSIONS.contains(&self.version)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandshakeState {
     WaitingForHello,
@@ -86,22 +47,22 @@ impl ProtocolNegotiator {
         }
     }
     
-    pub fn process_hello(&mut self, hello: HelloMessage) -> Result<HelloMessage, &'static str> {
+    pub fn process_hello(&mut self, version: u8, capability_flags: u32) -> Result<ControlMessage, &'static str> {
         if self.state != HandshakeState::WaitingForHello {
             return Err("Handshake already completed or failed");
         }
         
-        if !hello.is_version_supported() {
+        if !SUPPORTED_VERSIONS.contains(&version) {
             self.state = HandshakeState::Failed;
             return Err("Unsupported protocol version");
         }
         
-        self.negotiated_version = Some(hello.version);
-        self.peer_capabilities = Some(hello.capability_flags);
+        self.negotiated_version = Some(version);
+        self.peer_capabilities = Some(capability_flags);
         self.state = HandshakeState::Negotiated;
         
         // Respond with our capabilities (flags are optional and ignorable)
-        Ok(HelloMessage::new(hello.version, 0)) // No capabilities for now
+        Ok(ControlMessage::Hello { version, capability_flags: 0 }) // No capabilities for now
     }
     
     pub fn is_negotiated(&self) -> bool {
@@ -165,6 +126,22 @@ impl ConnectionTable {
         }
     }
     
+    /// Relay is authoritative for flow control.
+    /// This method generates control frames that MUST be sent to maintain protocol correctness.
+    pub fn poll_control_frames(&mut self) -> Vec<ControlMessage> {
+        let mut frames = Vec::new();
+        
+        for (&conn_id, info) in &mut self.connections {
+            if let Some(credits) = self.calculate_window_update(conn_id) {
+                frames.push(ControlMessage::WindowUpdate { conn_id, credits });
+                // Update window immediately to prevent duplicate updates
+                info.send_window = info.send_window.saturating_add(credits).min(info.initial_window_size * 2);
+            }
+        }
+        
+        frames
+    }
+    
     pub fn set_default_window_size(&mut self, size: u32) {
         self.default_window_size = size;
     }
@@ -183,7 +160,7 @@ impl ConnectionTable {
         match self.connections.get(&conn_id) {
             None => {
                 self.connections.insert(conn_id, ConnectionInfo {
-                    state: ConnectionState::Open,
+                    state: ConnectionState::Init,
                     buffered_bytes: 0,
                     send_window: self.default_window_size,
                     initial_window_size: self.default_window_size,
@@ -192,6 +169,22 @@ impl ConnectionTable {
                 Ok(())
             }
             Some(_) => Err("Connection already exists"),
+        }
+    }
+    
+    pub fn finalize_open(&mut self, conn_id: u32) -> Result<(), &'static str> {
+        if let Some(info) = self.connections.get_mut(&conn_id) {
+            if info.state == ConnectionState::Init {
+                info.state = ConnectionState::Open;
+                if self.inflight_opens > 0 {
+                    self.inflight_opens -= 1;
+                }
+                Ok(())
+            } else {
+                Err("Connection not in init state")
+            }
+        } else {
+            Err("Connection not found")
         }
     }
     
@@ -261,9 +254,6 @@ impl ConnectionTable {
                 match info.state {
                     ConnectionState::Open => {
                         info.state = ConnectionState::Closing;
-                        if self.inflight_opens > 0 {
-                            self.inflight_opens -= 1;
-                        }
                         Ok(())
                     }
                     _ => Err("Invalid state for close"),
@@ -521,8 +511,7 @@ impl FrameEncoder {
             ));
         }
         
-        let total_len = 2 + payload_len; // version + frame_type + payload
-        writer.write_all(&total_len.to_be_bytes())?;
+        writer.write_all(&payload_len.to_be_bytes())?;
         writer.write_all(&[version])?;
         writer.write_all(&[frame_type as u8])?;
         writer.write_all(payload)?;
@@ -538,19 +527,12 @@ impl FrameDecoder {
     ) -> IoResult<(ProtocolVersion, FrameType, Vec<u8>)> {
         let mut len_buf = [0u8; 4];
         reader.read_exact(&mut len_buf)?;
-        let total_len = u32::from_be_bytes(len_buf);
+        let payload_len = u32::from_be_bytes(len_buf);
         
-        if total_len > MAX_FRAME_SIZE {
+        if payload_len > MAX_FRAME_SIZE {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Frame exceeds maximum size",
-            ));
-        }
-        
-        if total_len < 2 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Frame too small",
             ));
         }
         
@@ -569,7 +551,6 @@ impl FrameDecoder {
             )),
         };
         
-        let payload_len = total_len - 2;
         let mut payload = vec![0u8; payload_len as usize];
         reader.read_exact(&mut payload)?;
         
