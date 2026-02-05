@@ -90,6 +90,16 @@ async fn tokio_main() -> Result<(), Box<dyn Error>> {
     let mut real_proxy = crate::real_proxy::RealProxyServer::new(proxy_policy.clone());
     real_proxy.bind()?;
     
+    // TCP warm-up to improve initial connection reliability
+    tokio::spawn(async {
+        if let Err(_) = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            tokio::net::TcpStream::connect("1.1.1.1:443")
+        ).await {
+            // Warm-up failure is expected and ignored
+        }
+    });
+    
     println!("\nReal proxy server ready!");
     println!("Configure your browser to use proxy: 127.0.0.1:8080");
     println!("Press Ctrl+C to stop the server");
