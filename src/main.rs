@@ -28,6 +28,7 @@ mod relay_protocol;
 mod transport_adapter;
 mod protocol_engine;
 mod connection_mapping;
+mod binding_pump;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
