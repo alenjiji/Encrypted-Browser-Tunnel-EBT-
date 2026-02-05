@@ -209,13 +209,19 @@ impl DirectTcpTunnelTransport {
 impl EncryptedTransport for DirectTcpTunnelTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
         // Resolve hostname using DoH resolver (no plaintext DNS)
-        let ips = self.dns_resolver.resolve(&self.target_host).await
+        let mut ips = self.dns_resolver.resolve(&self.target_host).await
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         if ips.is_empty() {
             log!(LogLevel::Error, "No IP addresses resolved for {}", self.target_host);
             return Err(TransportError::ConnectionFailed);
         }
+        
+        // Reorder IPs to prioritize IPv4 over IPv6 for better cold start reliability
+        ips.sort_by_key(|ip| match ip {
+            IpAddr::V4(_) => 0, // IPv4 first
+            IpAddr::V6(_) => 1, // IPv6 second
+        });
         
         // Sequential connection attempts
         log!(LogLevel::Debug, "Sequential connection attempts to {}:{} ({} IPs)", 
