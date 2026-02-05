@@ -29,21 +29,60 @@ pub enum ConnectionState {
     Closed,
 }
 
+#[derive(Debug, Clone)]
+pub struct RelayLimits {
+    pub max_connections: usize,
+    pub max_inflight_opens: usize,
+    pub max_buffered_bytes: usize,
+}
+
+#[derive(Debug, Default)]
+pub struct RelayMetrics {
+    pub connections_rejected: u64,
+    pub opens_rejected: u64,
+    pub buffer_limit_breached: u64,
+}
+
+struct ConnectionInfo {
+    state: ConnectionState,
+    buffered_bytes: usize,
+}
+
 pub struct ConnectionTable {
-    connections: HashMap<u32, ConnectionState>,
+    connections: HashMap<u32, ConnectionInfo>,
+    inflight_opens: usize,
+    limits: RelayLimits,
+    metrics: RelayMetrics,
 }
 
 impl ConnectionTable {
-    pub fn new() -> Self {
+    pub fn new(limits: RelayLimits) -> Self {
         Self {
             connections: HashMap::new(),
+            inflight_opens: 0,
+            limits,
+            metrics: RelayMetrics::default(),
         }
     }
     
     pub fn open_connection(&mut self, conn_id: u32) -> Result<(), &'static str> {
+        if self.connections.len() >= self.limits.max_connections {
+            self.metrics.connections_rejected += 1;
+            return Err("Max connections exceeded");
+        }
+        
+        if self.inflight_opens >= self.limits.max_inflight_opens {
+            self.metrics.opens_rejected += 1;
+            return Err("Max inflight opens exceeded");
+        }
+        
         match self.connections.get(&conn_id) {
             None => {
-                self.connections.insert(conn_id, ConnectionState::Open);
+                self.connections.insert(conn_id, ConnectionInfo {
+                    state: ConnectionState::Open,
+                    buffered_bytes: 0,
+                });
+                self.inflight_opens += 1;
                 Ok(())
             }
             Some(_) => Err("Connection already exists"),
@@ -52,10 +91,13 @@ impl ConnectionTable {
     
     pub fn close_connection(&mut self, conn_id: u32) -> Result<(), &'static str> {
         match self.connections.get_mut(&conn_id) {
-            Some(state) => {
-                match *state {
+            Some(info) => {
+                match info.state {
                     ConnectionState::Open => {
-                        *state = ConnectionState::Closing;
+                        info.state = ConnectionState::Closing;
+                        if self.inflight_opens > 0 {
+                            self.inflight_opens -= 1;
+                        }
                         Ok(())
                     }
                     _ => Err("Invalid state for close"),
@@ -70,15 +112,42 @@ impl ConnectionTable {
     }
     
     pub fn can_send_data(&self, conn_id: u32) -> bool {
-        matches!(self.connections.get(&conn_id), Some(ConnectionState::Open))
+        matches!(self.connections.get(&conn_id), Some(info) if info.state == ConnectionState::Open)
+    }
+    
+    pub fn add_buffered_bytes(&mut self, conn_id: u32, bytes: usize) -> Result<(), &'static str> {
+        if let Some(info) = self.connections.get_mut(&conn_id) {
+            if info.buffered_bytes + bytes > self.limits.max_buffered_bytes {
+                self.metrics.buffer_limit_breached += 1;
+                return Err("Buffer limit exceeded");
+            }
+            info.buffered_bytes += bytes;
+            Ok(())
+        } else {
+            Err("Connection not found")
+        }
+    }
+    
+    pub fn remove_buffered_bytes(&mut self, conn_id: u32, bytes: usize) {
+        if let Some(info) = self.connections.get_mut(&conn_id) {
+            info.buffered_bytes = info.buffered_bytes.saturating_sub(bytes);
+        }
     }
     
     pub fn get_state(&self, conn_id: u32) -> Option<ConnectionState> {
-        self.connections.get(&conn_id).copied()
+        self.connections.get(&conn_id).map(|info| info.state)
     }
     
     pub fn active_count(&self) -> usize {
         self.connections.len()
+    }
+    
+    pub fn inflight_opens(&self) -> usize {
+        self.inflight_opens
+    }
+    
+    pub fn metrics(&self) -> &RelayMetrics {
+        &self.metrics
     }
 }
 
