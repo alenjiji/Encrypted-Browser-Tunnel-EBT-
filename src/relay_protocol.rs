@@ -1,4 +1,5 @@
 use std::io::{Read, Write, Result as IoResult};
+use std::collections::HashMap;
 
 pub type ProtocolVersion = u8;
 
@@ -18,6 +19,67 @@ pub enum ControlOpcode {
     Close = 0x02,
     WindowUpdate = 0x03,
     Error = 0x04,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionState {
+    Init,
+    Open,
+    Closing,
+    Closed,
+}
+
+pub struct ConnectionTable {
+    connections: HashMap<u32, ConnectionState>,
+}
+
+impl ConnectionTable {
+    pub fn new() -> Self {
+        Self {
+            connections: HashMap::new(),
+        }
+    }
+    
+    pub fn open_connection(&mut self, conn_id: u32) -> Result<(), &'static str> {
+        match self.connections.get(&conn_id) {
+            None => {
+                self.connections.insert(conn_id, ConnectionState::Open);
+                Ok(())
+            }
+            Some(_) => Err("Connection already exists"),
+        }
+    }
+    
+    pub fn close_connection(&mut self, conn_id: u32) -> Result<(), &'static str> {
+        match self.connections.get_mut(&conn_id) {
+            Some(state) => {
+                match *state {
+                    ConnectionState::Open => {
+                        *state = ConnectionState::Closing;
+                        Ok(())
+                    }
+                    _ => Err("Invalid state for close"),
+                }
+            }
+            None => Err("Connection not found"),
+        }
+    }
+    
+    pub fn finalize_close(&mut self, conn_id: u32) {
+        self.connections.remove(&conn_id);
+    }
+    
+    pub fn can_send_data(&self, conn_id: u32) -> bool {
+        matches!(self.connections.get(&conn_id), Some(ConnectionState::Open))
+    }
+    
+    pub fn get_state(&self, conn_id: u32) -> Option<ConnectionState> {
+        self.connections.get(&conn_id).copied()
+    }
+    
+    pub fn active_count(&self) -> usize {
+        self.connections.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
