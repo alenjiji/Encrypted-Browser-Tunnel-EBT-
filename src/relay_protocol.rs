@@ -15,10 +15,106 @@ pub enum FrameType {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlOpcode {
+    Hello = 0x00,
     Open = 0x01,
     Close = 0x02,
     WindowUpdate = 0x03,
     Error = 0x04,
+}
+
+const PROTOCOL_VERSION_1: u8 = 1;
+const SUPPORTED_VERSIONS: &[u8] = &[PROTOCOL_VERSION_1];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HelloMessage {
+    pub version: u8,
+    pub capability_flags: u32,
+}
+
+impl HelloMessage {
+    pub fn new(version: u8, capability_flags: u32) -> Self {
+        Self { version, capability_flags }
+    }
+    
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(5);
+        buf.push(self.version);
+        buf.extend_from_slice(&self.capability_flags.to_be_bytes());
+        buf
+    }
+    
+    pub fn decode(payload: &[u8]) -> Result<Self, std::io::Error> {
+        if payload.len() < 5 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Hello payload too short",
+            ));
+        }
+        
+        let version = payload[0];
+        let capability_flags = u32::from_be_bytes([
+            payload[1], payload[2], payload[3], payload[4]
+        ]);
+        
+        Ok(HelloMessage { version, capability_flags })
+    }
+    
+    pub fn is_version_supported(&self) -> bool {
+        SUPPORTED_VERSIONS.contains(&self.version)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandshakeState {
+    WaitingForHello,
+    Negotiated,
+    Failed,
+}
+
+pub struct ProtocolNegotiator {
+    state: HandshakeState,
+    negotiated_version: Option<u8>,
+    peer_capabilities: Option<u32>,
+}
+
+impl ProtocolNegotiator {
+    pub fn new() -> Self {
+        Self {
+            state: HandshakeState::WaitingForHello,
+            negotiated_version: None,
+            peer_capabilities: None,
+        }
+    }
+    
+    pub fn process_hello(&mut self, hello: HelloMessage) -> Result<HelloMessage, &'static str> {
+        if self.state != HandshakeState::WaitingForHello {
+            return Err("Handshake already completed or failed");
+        }
+        
+        if !hello.is_version_supported() {
+            self.state = HandshakeState::Failed;
+            return Err("Unsupported protocol version");
+        }
+        
+        self.negotiated_version = Some(hello.version);
+        self.peer_capabilities = Some(hello.capability_flags);
+        self.state = HandshakeState::Negotiated;
+        
+        // Respond with our capabilities (flags are optional and ignorable)
+        Ok(HelloMessage::new(hello.version, 0)) // No capabilities for now
+    }
+    
+    pub fn is_negotiated(&self) -> bool {
+        self.state == HandshakeState::Negotiated
+    }
+    
+    pub fn negotiated_version(&self) -> Option<u8> {
+        self.negotiated_version
+    }
+    
+    pub fn peer_capabilities(&self) -> Option<u32> {
+        self.peer_capabilities
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,6 +319,7 @@ impl ConnectionTable {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlMessage {
+    Hello { version: u8, capability_flags: u32 },
     Open { conn_id: u32, target_host: String, target_port: u16 },
     Close { conn_id: u32, reason: u8 },
     WindowUpdate { conn_id: u32, credits: u32 },
@@ -270,6 +367,11 @@ impl ControlMessage {
         let mut buf = Vec::new();
         
         match self {
+            ControlMessage::Hello { version, capability_flags } => {
+                buf.push(ControlOpcode::Hello as u8);
+                buf.push(*version);
+                buf.extend_from_slice(&capability_flags.to_be_bytes());
+            }
             ControlMessage::Open { conn_id, target_host, target_port } => {
                 buf.push(ControlOpcode::Open as u8);
                 buf.extend_from_slice(&conn_id.to_be_bytes());
@@ -309,18 +411,31 @@ impl ControlMessage {
         let opcode = payload[0];
         let payload = &payload[1..];
         
-        if payload.len() < 4 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Control payload too short",
-            ));
-        }
-        
-        let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
-        let payload = &payload[4..];
-        
         match opcode {
+            0x00 => { // Hello
+                if payload.len() < 5 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Hello payload too short",
+                    ));
+                }
+                let version = payload[0];
+                let capability_flags = u32::from_be_bytes([
+                    payload[1], payload[2], payload[3], payload[4]
+                ]);
+                Ok(ControlMessage::Hello { version, capability_flags })
+            }
             0x01 => { // Open
+                if payload.len() < 4 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Control payload too short",
+                    ));
+                }
+                
+                let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let payload = &payload[4..];
+                
                 if payload.is_empty() {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -349,33 +464,36 @@ impl ControlMessage {
                 Ok(ControlMessage::Open { conn_id, target_host, target_port })
             }
             0x02 => { // Close
-                if payload.is_empty() {
+                if payload.len() < 5 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        "Close payload missing reason",
+                        "Close payload too short",
                     ));
                 }
-                let reason = payload[0];
+                let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let reason = payload[4];
                 Ok(ControlMessage::Close { conn_id, reason })
             }
             0x03 => { // WindowUpdate
-                if payload.len() < 4 {
+                if payload.len() < 8 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         "WindowUpdate payload too short",
                     ));
                 }
-                let credits = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let credits = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
                 Ok(ControlMessage::WindowUpdate { conn_id, credits })
             }
             0x04 => { // Error
-                if payload.is_empty() {
+                if payload.len() < 5 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        "Error payload missing code",
+                        "Error payload too short",
                     ));
                 }
-                let code = payload[0];
+                let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let code = payload[4];
                 Ok(ControlMessage::Error { conn_id, code })
             }
             _ => Err(std::io::Error::new(
