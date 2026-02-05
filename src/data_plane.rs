@@ -48,7 +48,7 @@ impl PayloadDecryptor {
         }
     }
 
-    pub async fn decrypt_payload(&self, session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<Vec<u8>, DataError> {
+    pub async fn decrypt_hop_payload(&self, session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<Vec<u8>, DataError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay | TrustZone::Exit => {
                 Ok(encrypted.0.clone())
@@ -104,7 +104,7 @@ impl TunnelManager {
     pub async fn process_inbound(&self, session_id: &SessionId, encrypted: EncryptedPayload) -> Result<ProcessResult, DataError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay => {
-                let decrypted = self.decryptor.decrypt_payload(session_id, &encrypted).await?;
+                let decrypted = self.decryptor.decrypt_hop_payload(session_id, &encrypted).await?;
                 let re_encrypted = self.encryptor.encrypt_payload(session_id, &decrypted).await?;
                 let forwarded = self.forwarder.forward_to_next_hop(re_encrypted).await?;
                 Ok(ProcessResult::Forward(forwarded))
