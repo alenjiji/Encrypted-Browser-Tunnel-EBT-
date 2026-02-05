@@ -21,7 +21,10 @@ jobs:
         echo "CPPFLAGS=-I$(brew --prefix icu4c)/include" >> $GITHUB_ENV
     
     - name: Build
-      run: cargo build --verbose 2>&1 | tee build.log
+      run: |
+        cargo build --verbose 2>&1 | tee build.log
+        echo "=== COMPILATION ERRORS ONLY ==="
+        grep -E "^error\[|^  --> |^   \|" build.log || echo "No compilation errors found"
     
     - name: Run tests
       run: cargo test --verbose 2>&1 | tee test.log
