@@ -61,6 +61,7 @@ impl RealProxyServer {
                 let stream = stream.into_std()?;
                 stream.set_nonblocking(false)?;
                 stream.set_nodelay(true).ok();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
                 
                 task::spawn(async move {
                     let permit = match TUNNEL_SEMAPHORE.clone().acquire_owned().await {
@@ -68,7 +69,10 @@ impl RealProxyServer {
                         Err(_) => return,
                     };
                     
-                    let result = Self::handle_connection(stream).await;
+                    let handle = tokio::runtime::Handle::current();
+                    let result = task::spawn_blocking(move || handle.block_on(Self::handle_connection(stream)))
+                        .await
+                        .unwrap_or_else(|e| Err(e.into()));
                     observability::record_connection_closed();
                     
                     // Ensure permit is always released
@@ -110,11 +114,16 @@ impl RealProxyServer {
                     // IMPORTANT: just continue, do NOT fail
                     continue;
                 }
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    return Err("CONNECT headers timed out".into());
+                }
                 Err(e) => {
                     return Err(e.into());
                 }
             }
         };
+
+        let _ = stream.set_read_timeout(None);
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
         
