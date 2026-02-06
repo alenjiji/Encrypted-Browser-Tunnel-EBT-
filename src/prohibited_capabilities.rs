@@ -1,4 +1,4 @@
-use crate::trust_boundaries::{TrustZone, SourceIp, DestinationHostname};
+use crate::trust_boundaries::{SourceIp, DestinationHostname};
 
 /// Prohibited: DNS resolution outside Exit zone
 /// This trait is intentionally NOT implemented for Entry/Relay zones

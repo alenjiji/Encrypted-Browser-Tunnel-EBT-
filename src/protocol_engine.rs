@@ -127,10 +127,10 @@ impl ProtocolEngine {
     
     fn process_control_message(&mut self, conn_id: u32, message: ControlMessage) {
         match message {
-            ControlMessage::Open { target_host, target_port, .. } => {
+            ControlMessage::Open { target_host: _, target_port: _, .. } => {
                 let _ = self.connection_table.open_connection(conn_id);
             }
-            ControlMessage::Close { reason, .. } => {
+            ControlMessage::Close { reason: _, .. } => {
                 let _ = self.connection_table.close_connection(conn_id);
             }
             ControlMessage::WindowUpdate { credits, .. } => {
@@ -140,7 +140,7 @@ impl ProtocolEngine {
         }
     }
     
-    fn process_data_frame(&mut self, frame: DataFrame) {
+    fn process_data_frame(&mut self, _frame: DataFrame) {
         // Forward data frame to appropriate connection
         // Implementation depends on specific relay logic
     }
@@ -164,7 +164,7 @@ impl TransportCallbacks for ProtocolCallbacks {
         }
     }
     
-    fn on_transport_error(&mut self, error: TransportError) {
+    fn on_transport_error(&mut self, _error: TransportError) {
         // Transport error notification - protocol decides response
     }
 }

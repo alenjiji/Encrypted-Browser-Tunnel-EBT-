@@ -1,6 +1,5 @@
 use crate::trust_boundaries::*;
 use crate::control_plane::{SessionId, HopKey, PrivateKey, PublicKey};
-use std::collections::HashMap;
 
 pub struct EphemeralKeyGenerator {
     zone: TrustZone,
@@ -41,7 +40,7 @@ impl HopKeyDeriver {
         Self { zone }
     }
 
-    pub async fn derive_next_hop_key(&self, current_key: &HopKey) -> Result<HopKey, KeyError> {
+    pub async fn derive_next_hop_key(&self, _current_key: &HopKey) -> Result<HopKey, KeyError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay => {
                 Ok(HopKey([0u8; 32]))
@@ -64,7 +63,7 @@ impl KeyRotator {
         }
     }
 
-    pub async fn rotate_session_keys(&mut self, session_id: &SessionId) -> Result<(), KeyError> {
+    pub async fn rotate_session_keys(&mut self, _session_id: &SessionId) -> Result<(), KeyError> {
         match self.zone {
             TrustZone::Local | TrustZone::Entry | TrustZone::Relay | TrustZone::Exit => {
                 self.rotation_counter += 1;

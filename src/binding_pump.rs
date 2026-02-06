@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 use crate::protocol_engine::ProtocolEngine;
-use crate::transport_adapter::{TransportAdapter, TransportError};
+use crate::transport_adapter::TransportAdapter;
 
 pub struct BindingPump {
     protocol_engine: Arc<Mutex<ProtocolEngine>>,

@@ -1,10 +1,3 @@
-/// Phase 5: Traffic Shaping & Fingerprint Resistance
-/// 
-/// This module is only compiled when the phase_5_traffic_shaping feature is enabled.
-/// When disabled, Phase 4 invariants remain fully enforced with no runtime changes.
-
-use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(feature = "phase_5_traffic_shaping")]
 pub const PHASE_5_ENABLED: bool = true;

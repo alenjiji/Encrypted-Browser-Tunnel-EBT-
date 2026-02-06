@@ -51,7 +51,7 @@ pub mod visibility {
 
 /// Compile-time enforcement of Phase 3 invariants
 pub mod invariants {
-    use super::PHASE;
+    
     
     /// Marker trait: Types that never inspect TLS payload
     pub trait NoTlsInspection {}

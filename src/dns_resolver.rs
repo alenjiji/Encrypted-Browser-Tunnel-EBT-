@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 use serde::Deserialize;
-use base64::{Engine as _, engine::general_purpose};
 
 pub trait DnsResolver {
     async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>, DnsError>;
@@ -106,8 +105,7 @@ impl DnsResolver for DohResolver {
         );
         
         // Attempt DoH resolution with timeout and retry
-        let mut last_error = None;
-        for attempt in 0..2 {
+        for _attempt in 0..2 {
             let response_result = self.client
                 .get(&url)
                 .header("Accept", "application/dns-json")
@@ -118,15 +116,9 @@ impl DnsResolver for DohResolver {
             let response = match response_result {
                 Ok(resp) => match resp.json::<DohResponse>().await {
                     Ok(json) => json,
-                    Err(e) => {
-                        last_error = Some(e);
-                        continue;
-                    }
+                    Err(_e) => continue,
                 },
-                Err(e) => {
-                    last_error = Some(e);
-                    continue;
-                }
+                Err(_e) => continue,
             };
             
             let mut ips = Vec::new();

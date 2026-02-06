@@ -1,5 +1,4 @@
 use crate::trust_boundaries::*;
-use crate::threat_invariants::*;
 use crate::control_plane::{SessionId, HopKey};
 use std::collections::HashMap;
 
@@ -25,7 +24,7 @@ impl PayloadEncryptor {
         }
     }
 
-    pub async fn encrypt_payload(&self, session_id: &SessionId, plaintext: &[u8]) -> Result<EncryptedPayload, DataError> {
+    pub async fn encrypt_payload(&self, _session_id: &SessionId, plaintext: &[u8]) -> Result<EncryptedPayload, DataError> {
         match self.zone {
             TrustZone::Local | TrustZone::Entry | TrustZone::Relay => {
                 Ok(EncryptedPayload(plaintext.to_vec()))
@@ -48,7 +47,7 @@ impl PayloadDecryptor {
         }
     }
 
-    pub async fn decrypt_hop_payload(&self, session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<Vec<u8>, DataError> {
+    pub async fn decrypt_hop_payload(&self, _session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<Vec<u8>, DataError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay | TrustZone::Exit => {
                 Ok(encrypted.0.clone())
@@ -57,7 +56,7 @@ impl PayloadDecryptor {
         }
     }
 
-    pub async fn decrypt_to_plaintext(&self, session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<PlaintextPayload, DataError> {
+    pub async fn decrypt_to_plaintext(&self, _session_id: &SessionId, encrypted: &EncryptedPayload) -> Result<PlaintextPayload, DataError> {
         match self.zone {
             TrustZone::Exit => {
                 Ok(PlaintextPayload(encrypted.0.clone()))

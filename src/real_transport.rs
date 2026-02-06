@@ -4,7 +4,7 @@
 // This commit focuses on correct CONNECT semantics and capability gating.
 
 use std::io::{Read, Write};
-use std::net::{TcpStream, Shutdown, IpAddr};
+use std::net::{TcpStream, IpAddr};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;

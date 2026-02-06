@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod client;
 mod transport;
 mod dns;
@@ -35,9 +37,7 @@ mod control_channel;
 mod async_tunnel;
 
 use std::error::Error;
-use client::{ProxyConfig, ProxyType};
-use session::TunnelSession;
-use config::{CapabilityPolicy, ExecutionMode, Capability, ProxyPolicy, ProxyMode};
+use config::{ProxyPolicy, ProxyMode};
 
 #[cfg(feature = "tokio")]
 #[tokio::main]

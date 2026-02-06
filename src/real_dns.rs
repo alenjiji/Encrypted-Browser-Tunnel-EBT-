@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 use crate::config::{DnsPolicy, ResolutionLocation, LeakDetection};
-use crate::dns::{DnsQuery, DnsResponse, DnsError, ResolverType};
+use crate::dns::{DnsQuery, DnsResponse, ResolverType};
 
 /// Real DNS resolver that enforces DnsPolicy
 pub struct RealDnsResolver {

@@ -1,6 +1,4 @@
 use crate::trust_boundaries::*;
-use crate::threat_invariants::*;
-use crate::prohibited_capabilities::*;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -28,7 +26,7 @@ impl SessionEstablisher {
         Self { zone }
     }
 
-    pub async fn initiate_session(&self, route: EncryptedRoute) -> Result<SessionId, ControlError> {
+    pub async fn initiate_session(&self, _route: EncryptedRoute) -> Result<SessionId, ControlError> {
         match self.zone {
             TrustZone::Local => {
                 let session_id = SessionId(rand::random());
@@ -52,7 +50,7 @@ impl KeyExchanger {
         }
     }
 
-    pub async fn exchange_key(&mut self, session_id: SessionId, encrypted_key: Vec<u8>) -> Result<(), ControlError> {
+    pub async fn exchange_key(&mut self, session_id: SessionId, _encrypted_key: Vec<u8>) -> Result<(), ControlError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay => {
                 let hop_key = HopKey(rand::random());
@@ -73,7 +71,7 @@ impl RouteNegotiator {
         Self { zone }
     }
 
-    pub async fn setup_route(&self, encrypted_next_hop: Vec<u8>) -> Result<(), ControlError> {
+    pub async fn setup_route(&self, _encrypted_next_hop: Vec<u8>) -> Result<(), ControlError> {
         match self.zone {
             TrustZone::Entry | TrustZone::Relay | TrustZone::Exit => Ok(()),
             _ => Err(ControlError::InvalidZone),

@@ -3,7 +3,6 @@ use std::io::Result;
 use socket2::{Socket, TcpKeepalive};
 use std::time::Duration;
 use tokio::time::timeout;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use async_trait::async_trait;
 #[cfg(feature = "encrypted_control")]
 use crate::control_channel::ControlChannel;

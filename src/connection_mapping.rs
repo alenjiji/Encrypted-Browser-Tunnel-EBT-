@@ -32,7 +32,7 @@ impl ConnectionMapping {
     pub fn create_mapping(
         &mut self, 
         browser_socket: TcpStream,
-        protocol_engine: &Arc<Mutex<ProtocolEngine>>
+        _protocol_engine: &Arc<Mutex<ProtocolEngine>>
     ) -> Result<(BrowserSocketId, LogicalConnectionId), &'static str> {
         let socket_id = BrowserSocketId(self.next_socket_id);
         self.next_socket_id += 1;
@@ -68,10 +68,10 @@ impl ConnectionMapping {
         socket_id: BrowserSocketId,
         protocol_engine: &Arc<Mutex<ProtocolEngine>>
     ) {
-        if let Some(logical_id) = self.socket_to_logical.get(&socket_id) {
+        if let Some(_logical_id) = self.socket_to_logical.get(&socket_id) {
             // Notify protocol engine of socket close - do NOT destroy state
             // Protocol engine decides cleanup policy
-            if let Ok(mut engine) = protocol_engine.lock() {
+            if let Ok(_engine) = protocol_engine.lock() {
                 // Protocol receives notification but maintains state authority
                 // Transport is closed but protocol connection may remain
             }
@@ -85,7 +85,7 @@ impl ConnectionMapping {
     pub fn protocol_close_connection(
         &mut self,
         logical_id: LogicalConnectionId,
-        protocol_engine: &Arc<Mutex<ProtocolEngine>>
+        _protocol_engine: &Arc<Mutex<ProtocolEngine>>
     ) {
         // Protocol-initiated cleanup - remove all mappings
         if let Some(socket_id) = self.logical_to_socket.remove(&logical_id) {
