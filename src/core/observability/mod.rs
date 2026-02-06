@@ -6,6 +6,7 @@ pub enum ObservabilityLevel {
     OBS_DEV,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorClass {
     PROTOCOL_VIOLATION,
@@ -130,13 +131,19 @@ pub struct ObservabilitySnapshot {
 }
 
 pub fn snapshot() -> ObservabilitySnapshot {
+    let mut bytes_sent_coarse = [0u64; BYTE_BUCKETS];
+    let mut bytes_received_coarse = [0u64; BYTE_BUCKETS];
+    for i in 0..BYTE_BUCKETS {
+        bytes_sent_coarse[i] = BYTES_SENT_COARSE[i].load(Ordering::Relaxed);
+        bytes_received_coarse[i] = BYTES_RECEIVED_COARSE[i].load(Ordering::Relaxed);
+    }
     ObservabilitySnapshot {
         total_connections_opened: TOTAL_CONNECTIONS_OPENED.load(Ordering::Relaxed),
         total_connections_closed: TOTAL_CONNECTIONS_CLOSED.load(Ordering::Relaxed),
         frames_sent: FRAMES_SENT.load(Ordering::Relaxed),
         frames_received: FRAMES_RECEIVED.load(Ordering::Relaxed),
-        bytes_sent_coarse: BYTES_SENT_COARSE.map(|c| c.load(Ordering::Relaxed)),
-        bytes_received_coarse: BYTES_RECEIVED_COARSE.map(|c| c.load(Ordering::Relaxed)),
+        bytes_sent_coarse,
+        bytes_received_coarse,
         error_class_total: ERROR_CLASS_COUNT.load(Ordering::Relaxed),
     }
 }

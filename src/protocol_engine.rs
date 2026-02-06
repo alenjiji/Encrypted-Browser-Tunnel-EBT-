@@ -5,6 +5,7 @@ use crate::relay_protocol::{
     ConnectionTable, RelayLimits, ProtocolNegotiator
 };
 use crate::transport_adapter::{TransportCallbacks, TransportError};
+use crate::core::observability;
 use std::io::Cursor;
 
 pub struct ProtocolEngine {
@@ -128,10 +129,14 @@ impl ProtocolEngine {
     fn process_control_message(&mut self, conn_id: u32, message: ControlMessage) {
         match message {
             ControlMessage::Open { target_host: _, target_port: _, .. } => {
-                let _ = self.connection_table.open_connection(conn_id);
+                if self.connection_table.open_connection(conn_id).is_ok() {
+                    observability::record_connection_opened();
+                }
             }
             ControlMessage::Close { reason: _, .. } => {
-                let _ = self.connection_table.close_connection(conn_id);
+                if self.connection_table.close_connection(conn_id).is_ok() {
+                    observability::record_connection_closed();
+                }
             }
             ControlMessage::WindowUpdate { credits, .. } => {
                 let _ = self.connection_table.add_send_credits(conn_id, credits);
@@ -166,5 +171,6 @@ impl TransportCallbacks for ProtocolCallbacks {
     
     fn on_transport_error(&mut self, _error: TransportError) {
         // Transport error notification - protocol decides response
+        observability::record_error(observability::ErrorClass::TRANSPORT_IO);
     }
 }

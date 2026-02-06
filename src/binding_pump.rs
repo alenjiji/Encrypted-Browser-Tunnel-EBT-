@@ -4,6 +4,7 @@ use std::thread;
 use std::time::Duration;
 use crate::protocol_engine::ProtocolEngine;
 use crate::transport_adapter::TransportAdapter;
+use crate::core::observability;
 
 pub struct BindingPump {
     protocol_engine: Arc<Mutex<ProtocolEngine>>,
@@ -53,6 +54,7 @@ impl BindingPump {
                     for frame in frames {
                         if let Some(transport) = transports.get_mut(&conn_id) {
                             if transport.send_bytes(&frame).is_err() {
+                                observability::record_error(observability::ErrorClass::TRANSPORT_IO);
                                 transports.remove(&conn_id);
                                 break;
                             }

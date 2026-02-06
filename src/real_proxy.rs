@@ -11,6 +11,7 @@ use crate::real_transport::DirectTcpTunnelTransport;
 use crate::transport::EncryptedTransport;
 use crate::logging::LogLevel;
 use crate::log;
+use crate::core::observability;
 use tokio::task;
 use tokio::sync::Semaphore;
 
@@ -53,6 +54,7 @@ impl RealProxyServer {
             loop {
                 // Handle each connection in a separate task
                 let (stream, _addr) = listener.accept()?;
+                observability::record_connection_opened();
                 stream.set_nodelay(true).ok();
                 
                 task::spawn(async move {
@@ -62,6 +64,7 @@ impl RealProxyServer {
                     };
                     
                     let result = Self::handle_connection(stream).await;
+                    observability::record_connection_closed();
                     
                     // Ensure permit is always released
                     drop(permit);
