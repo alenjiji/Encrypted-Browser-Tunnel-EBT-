@@ -1,1 +1,1 @@
-pub mod observability;
+pub(crate) mod observability;

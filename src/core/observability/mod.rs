@@ -39,27 +39,31 @@ pub const OBS_NONE: bool = matches!(OBS_LEVEL, ObservabilityLevel::OBS_NONE);
 pub const OBS_SAFE: bool = matches!(OBS_LEVEL, ObservabilityLevel::OBS_SAFE);
 pub const OBS_DEV: bool = matches!(OBS_LEVEL, ObservabilityLevel::OBS_DEV);
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
-static ERROR_CLASS_COUNT: AtomicU64 = AtomicU64::new(0);
-static HEALTH_STATE: AtomicU64 = AtomicU64::new(HealthState::OK as u64);
+const ERROR_CLASS_COUNT: usize = 4;
+static ERROR_COUNTS: [AtomicU64; ERROR_CLASS_COUNT] = [const { AtomicU64::new(0) }; ERROR_CLASS_COUNT];
+static HEALTH_STATE: AtomicU8 = AtomicU8::new(HealthState::OK as u8);
 
 #[inline]
 pub fn record_error(_class: ErrorClass) {
-    ERROR_CLASS_COUNT.fetch_add(1, Ordering::Relaxed);
+    let idx = _class as usize;
+    if idx < ERROR_CLASS_COUNT {
+        ERROR_COUNTS[idx].fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[inline]
 pub fn set_health(state: HealthState) {
-    HEALTH_STATE.store(state as u64, Ordering::Relaxed);
+    HEALTH_STATE.store(state as u8, Ordering::Relaxed);
 }
 
 #[inline]
 pub fn get_health() -> HealthState {
     match HEALTH_STATE.load(Ordering::Relaxed) {
-        x if x == HealthState::OK as u64 => HealthState::OK,
-        x if x == HealthState::DEGRADED as u64 => HealthState::DEGRADED,
-        x if x == HealthState::FAULTED as u64 => HealthState::FAULTED,
+        x if x == HealthState::OK as u8 => HealthState::OK,
+        x if x == HealthState::DEGRADED as u8 => HealthState::DEGRADED,
+        x if x == HealthState::FAULTED as u8 => HealthState::FAULTED,
         _ => HealthState::FAULTED,
     }
 }
@@ -127,23 +131,32 @@ pub struct ObservabilitySnapshot {
     pub frames_received: u64,
     pub bytes_sent_coarse: [u64; BYTE_BUCKETS],
     pub bytes_received_coarse: [u64; BYTE_BUCKETS],
-    pub error_class_total: u64,
+    pub error_class_counts: [u64; ERROR_CLASS_COUNT],
 }
 
-pub fn snapshot() -> ObservabilitySnapshot {
+pub fn snapshot() -> Option<ObservabilitySnapshot> {
+    if !OBS_DEV {
+        return None;
+    }
+
     let mut bytes_sent_coarse = [0u64; BYTE_BUCKETS];
     let mut bytes_received_coarse = [0u64; BYTE_BUCKETS];
     for i in 0..BYTE_BUCKETS {
         bytes_sent_coarse[i] = BYTES_SENT_COARSE[i].load(Ordering::Relaxed);
         bytes_received_coarse[i] = BYTES_RECEIVED_COARSE[i].load(Ordering::Relaxed);
     }
-    ObservabilitySnapshot {
+    let mut error_class_counts = [0u64; ERROR_CLASS_COUNT];
+    for i in 0..ERROR_CLASS_COUNT {
+        error_class_counts[i] = ERROR_COUNTS[i].load(Ordering::Relaxed);
+    }
+
+    Some(ObservabilitySnapshot {
         total_connections_opened: TOTAL_CONNECTIONS_OPENED.load(Ordering::Relaxed),
         total_connections_closed: TOTAL_CONNECTIONS_CLOSED.load(Ordering::Relaxed),
         frames_sent: FRAMES_SENT.load(Ordering::Relaxed),
         frames_received: FRAMES_RECEIVED.load(Ordering::Relaxed),
         bytes_sent_coarse,
         bytes_received_coarse,
-        error_class_total: ERROR_CLASS_COUNT.load(Ordering::Relaxed),
-    }
+        error_class_counts,
+    })
 }
