@@ -15,11 +15,14 @@ use crate::core::observability;
 use tokio::task;
 use tokio::sync::Semaphore;
 use tokio::net::TcpListener;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 lazy_static::lazy_static! {
     // Restore higher global concurrency for asset-heavy sites
     static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(256));
 }
+
+static HEADER_DISCARD_COUNT: AtomicU64 = AtomicU64::new(0);
 
 /// Real proxy server that binds to network interfaces
 pub struct RealProxyServer {
@@ -61,7 +64,7 @@ impl RealProxyServer {
                 let stream = stream.into_std()?;
                 stream.set_nonblocking(false)?;
                 stream.set_nodelay(true).ok();
-                stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
                 
                 task::spawn(async move {
                     let permit = match TUNNEL_SEMAPHORE.clone().acquire_owned().await {
@@ -79,7 +82,12 @@ impl RealProxyServer {
                     drop(permit);
                     
                     if let Err(e) = result {
-                        log!(LogLevel::Error, "Connection failed: {}", e);
+                        let msg = e.to_string();
+                        if msg == "CONNECT headers timed out" || msg == "Client closed before completing CONNECT headers" {
+                            HEADER_DISCARD_COUNT.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            log!(LogLevel::Error, "Connection failed: {}", e);
+                        }
                     }
                 });
             }
@@ -89,7 +97,7 @@ impl RealProxyServer {
     }
     
     /// Handle a single client connection
-    async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Read HTTP request headers in chunks until \r\n\r\n
         let mut buffer = Vec::new();
         let mut chunk_buf = [0u8; 4096]; // 4KB chunks
@@ -208,7 +216,7 @@ impl RealProxyServer {
     }
     
     /// Handle HTTP request forwarding (non-CONNECT)
-    async fn handle_http_request(mut client_stream: TcpStream, request: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn handle_http_request(mut client_stream: TcpStream, request: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Parse the request line to extract target host and port
         let first_line = request.lines().next().unwrap_or("");
         let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -307,7 +315,7 @@ impl RealProxyServer {
     }
     
     /// Forward data between client and target for HTTP requests
-    fn forward_http_streams(client_stream: TcpStream, target_stream: TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    fn forward_http_streams(client_stream: TcpStream, target_stream: TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let client = Arc::new(Mutex::new(client_stream));
         let target = Arc::new(Mutex::new(target_stream));
         
