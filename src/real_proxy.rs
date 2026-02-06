@@ -92,17 +92,27 @@ impl RealProxyServer {
         
         // Read in chunks until we find \r\n\r\n
         let header_end = loop {
-            let bytes_read = stream.read(&mut chunk_buf)?;
-            if bytes_read == 0 {
-                let _ = stream.shutdown(std::net::Shutdown::Both);
-                return Err("Incomplete request headers".into()); // EOF
-            }
-            
-            buffer.extend_from_slice(&chunk_buf[..bytes_read]);
-            
-            // Check for \r\n\r\n pattern in the buffer
-            if let Some(pos) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-                break pos + 4;
+            match stream.read(&mut chunk_buf) {
+                Ok(0) => {
+                    // true EOF: client closed before completing headers
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                    return Err("Client closed before completing CONNECT headers".into());
+                }
+                Ok(n) => {
+                    buffer.extend_from_slice(&chunk_buf[..n]);
+                    
+                    // Check for \r\n\r\n pattern in the buffer
+                    if let Some(pos) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+                        break pos + 4;
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // IMPORTANT: just continue, do NOT fail
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
             }
         };
         
