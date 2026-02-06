@@ -88,27 +88,22 @@ impl RealProxyServer {
         // Read HTTP request headers in chunks until \r\n\r\n
         let mut buffer = Vec::new();
         let mut chunk_buf = [0u8; 4096]; // 4KB chunks
-        let mut header_end = 0;
         
         // Read in chunks until we find \r\n\r\n
-        loop {
+        let header_end = loop {
             let bytes_read = stream.read(&mut chunk_buf)?;
             if bytes_read == 0 {
-                break; // EOF
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Err("Incomplete request headers".into()); // EOF
             }
             
             buffer.extend_from_slice(&chunk_buf[..bytes_read]);
             
             // Check for \r\n\r\n pattern in the buffer
             if let Some(pos) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-                header_end = pos + 4;
-                break;
+                break pos + 4;
             }
-        }
-        
-        if header_end == 0 {
-            return Ok(());
-        }
+        };
         
         let request = String::from_utf8_lossy(&buffer[..header_end]);
         
@@ -188,6 +183,7 @@ impl RealProxyServer {
             stream.flush()?;
         }
         
+        let _ = stream.shutdown(std::net::Shutdown::Both);
         Ok(())
     }
     
