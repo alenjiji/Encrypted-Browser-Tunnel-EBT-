@@ -15,14 +15,32 @@ use crate::core::observability;
 use tokio::task;
 use tokio::sync::Semaphore;
 use tokio::net::TcpListener;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 lazy_static::lazy_static! {
     // Restore higher global concurrency for asset-heavy sites
     static ref TUNNEL_SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::new(256));
 }
 
-static HEADER_DISCARD_COUNT: AtomicU64 = AtomicU64::new(0);
+#[derive(Debug)]
+struct HeaderParseError(HeaderParseKind);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeaderParseKind {
+    ClientClosed,
+    TimedOut,
+}
+
+impl std::fmt::Display for HeaderParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            HeaderParseKind::ClientClosed => write!(f, "Client closed before completing CONNECT headers"),
+            HeaderParseKind::TimedOut => write!(f, "CONNECT headers timed out"),
+        }
+    }
+}
+
+impl std::error::Error for HeaderParseError {}
+
 
 /// Real proxy server that binds to network interfaces
 pub struct RealProxyServer {
@@ -82,9 +100,12 @@ impl RealProxyServer {
                     drop(permit);
                     
                     if let Err(e) = result {
-                        let msg = e.to_string();
-                        if msg == "CONNECT headers timed out" || msg == "Client closed before completing CONNECT headers" {
-                            HEADER_DISCARD_COUNT.fetch_add(1, Ordering::Relaxed);
+                        if let Some(header_err) = e.downcast_ref::<HeaderParseError>() {
+                            match header_err.0 {
+                                HeaderParseKind::TimedOut | HeaderParseKind::ClientClosed => {
+                                    observability::record_header_discard();
+                                }
+                            }
                         } else {
                             log!(LogLevel::Error, "Connection failed: {}", e);
                         }
@@ -108,7 +129,7 @@ impl RealProxyServer {
                 Ok(0) => {
                     // true EOF: client closed before completing headers
                     let _ = stream.shutdown(std::net::Shutdown::Both);
-                    return Err("Client closed before completing CONNECT headers".into());
+                    return Err(Box::new(HeaderParseError(HeaderParseKind::ClientClosed)));
                 }
                 Ok(n) => {
                     buffer.extend_from_slice(&chunk_buf[..n]);
@@ -123,7 +144,7 @@ impl RealProxyServer {
                     continue;
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                    return Err("CONNECT headers timed out".into());
+                    return Err(Box::new(HeaderParseError(HeaderParseKind::TimedOut)));
                 }
                 Err(e) => {
                     return Err(e.into());

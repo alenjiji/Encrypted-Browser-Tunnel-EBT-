@@ -72,6 +72,7 @@ static TOTAL_CONNECTIONS_OPENED: AtomicU64 = AtomicU64::new(0);
 static TOTAL_CONNECTIONS_CLOSED: AtomicU64 = AtomicU64::new(0);
 static FRAMES_SENT: AtomicU64 = AtomicU64::new(0);
 static FRAMES_RECEIVED: AtomicU64 = AtomicU64::new(0);
+static HEADER_DISCARD_COUNT: AtomicU64 = AtomicU64::new(0);
 
 const BYTE_BUCKETS: usize = 21;
 static BYTES_SENT_COARSE: [AtomicU64; BYTE_BUCKETS] = [const { AtomicU64::new(0) }; BYTE_BUCKETS];
@@ -110,6 +111,11 @@ pub fn record_bytes_received_coarse(byte_len: usize) {
 }
 
 #[inline]
+pub fn record_header_discard() {
+    HEADER_DISCARD_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
 const fn coarse_bucket_index(byte_len: usize) -> usize {
     if byte_len == 0 {
         return 0;
@@ -131,6 +137,7 @@ pub struct ObservabilitySnapshot {
     pub frames_received: u64,
     pub bytes_sent_coarse: [u64; BYTE_BUCKETS],
     pub bytes_received_coarse: [u64; BYTE_BUCKETS],
+    pub header_discards: u64,
     pub error_class_counts: [u64; ERROR_CLASS_COUNT],
 }
 
@@ -157,6 +164,7 @@ pub fn snapshot() -> Option<ObservabilitySnapshot> {
         frames_received: FRAMES_RECEIVED.load(Ordering::Relaxed),
         bytes_sent_coarse,
         bytes_received_coarse,
+        header_discards: HEADER_DISCARD_COUNT.load(Ordering::Relaxed),
         error_class_counts,
     })
 }
