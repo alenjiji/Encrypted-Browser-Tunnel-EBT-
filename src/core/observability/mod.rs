@@ -16,6 +16,15 @@ pub enum ErrorClass {
     _Private,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HealthState {
+    OK,
+    DEGRADED,
+    FAULTED,
+    #[doc(hidden)]
+    _Private,
+}
+
 #[cfg(feature = "obs_none")]
 pub const OBS_LEVEL: ObservabilityLevel = ObservabilityLevel::OBS_NONE;
 
@@ -32,10 +41,26 @@ pub const OBS_DEV: bool = matches!(OBS_LEVEL, ObservabilityLevel::OBS_DEV);
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static ERROR_CLASS_COUNT: AtomicU64 = AtomicU64::new(0);
+static HEALTH_STATE: AtomicU64 = AtomicU64::new(HealthState::OK as u64);
 
 #[inline]
 pub fn record_error(_class: ErrorClass) {
     ERROR_CLASS_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn set_health(state: HealthState) {
+    HEALTH_STATE.store(state as u64, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn get_health() -> HealthState {
+    match HEALTH_STATE.load(Ordering::Relaxed) {
+        x if x == HealthState::OK as u64 => HealthState::OK,
+        x if x == HealthState::DEGRADED as u64 => HealthState::DEGRADED,
+        x if x == HealthState::FAULTED as u64 => HealthState::FAULTED,
+        _ => HealthState::FAULTED,
+    }
 }
 
 static TOTAL_CONNECTIONS_OPENED: AtomicU64 = AtomicU64::new(0);
