@@ -59,6 +59,7 @@ impl RealProxyServer {
                 let (stream, _addr) = listener.accept().await?;
                 observability::record_connection_opened();
                 let stream = stream.into_std()?;
+                stream.set_nonblocking(false)?;
                 stream.set_nodelay(true).ok();
                 
                 task::spawn(async move {
