@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod client;
+mod core;
 mod transport;
 mod dns;
 mod session;
