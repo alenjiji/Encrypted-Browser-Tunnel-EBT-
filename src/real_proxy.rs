@@ -2,7 +2,7 @@
 // This proxy currently accepts connections sequentially.
 // A multi-connection loop will be added in a follow-up change.
 
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener as StdTcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,6 +14,7 @@ use crate::log;
 use crate::core::observability;
 use tokio::task;
 use tokio::sync::Semaphore;
+use tokio::net::TcpListener;
 
 lazy_static::lazy_static! {
     // Restore higher global concurrency for asset-heavy sites
@@ -39,7 +40,9 @@ impl RealProxyServer {
         let bind_addr = format!("{}:{}", self.policy.bind_address, self.policy.bind_port);
         println!("Real proxy binding to {}", bind_addr);
         
-        let listener = TcpListener::bind(&bind_addr)?;
+        let std_listener = StdTcpListener::bind(&bind_addr)?;
+        std_listener.set_nonblocking(true)?;
+        let listener = TcpListener::from_std(std_listener)?;
         self.listener = Some(listener);
         
         println!("Real proxy server bound to {}", bind_addr);
@@ -53,8 +56,9 @@ impl RealProxyServer {
             
             loop {
                 // Handle each connection in a separate task
-                let (stream, _addr) = listener.accept()?;
+                let (stream, _addr) = listener.accept().await?;
                 observability::record_connection_opened();
+                let stream = stream.into_std()?;
                 stream.set_nodelay(true).ok();
                 
                 task::spawn(async move {
