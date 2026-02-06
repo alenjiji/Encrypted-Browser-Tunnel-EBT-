@@ -170,32 +170,36 @@ impl TransportAdapter for TcpTransportAdapter {
     }
     
     fn start_reading(&mut self, callbacks: Arc<Mutex<dyn TransportCallbacks>>) {
-        let stream = Arc::clone(&self.stream);
-        
+        let mut read_stream = {
+            let stream = self.stream.lock().unwrap();
+            match stream.try_clone() {
+                Ok(s) => s,
+                Err(_) => {
+                    if let Ok(mut cb) = callbacks.lock() {
+                        cb.on_transport_error(TransportError::ReadError);
+                    }
+                    return;
+                }
+            }
+        };
+
         thread::spawn(move || {
             let mut buffer = [0u8; 4096];
             
             loop {
-                let bytes_read = {
-                    let mut stream = match stream.lock() {
-                        Ok(s) => s,
-                        Err(_) => break,
-                    };
-                    
-                    match stream.read(&mut buffer) {
-                        Ok(0) => break, // EOF
-                        Ok(n) => n,
-                        Err(e) => {
-                            let error = match e.kind() {
-                                std::io::ErrorKind::WouldBlock => continue,
-                                std::io::ErrorKind::TimedOut => TransportError::Timeout,
-                                _ => TransportError::ReadError,
-                            };
-                            if let Ok(mut cb) = callbacks.lock() {
-                                cb.on_transport_error(error);
-                            }
-                            break;
+                let bytes_read = match read_stream.read(&mut buffer) {
+                    Ok(0) => break, // EOF
+                    Ok(n) => n,
+                    Err(e) => {
+                        let error = match e.kind() {
+                            std::io::ErrorKind::WouldBlock => continue,
+                            std::io::ErrorKind::TimedOut => TransportError::Timeout,
+                            _ => TransportError::ReadError,
+                        };
+                        if let Ok(mut cb) = callbacks.lock() {
+                            cb.on_transport_error(error);
                         }
+                        break;
                     }
                 };
                 
