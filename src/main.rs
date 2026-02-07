@@ -4,6 +4,7 @@ mod client;
 mod core;
 mod transport;
 mod ssh_transport;
+mod ssh_transport_adapter;
 mod dns;
 mod session;
 mod config;

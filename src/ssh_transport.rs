@@ -1,4 +1,5 @@
 use crate::transport::{EncryptedTransport, TransportError};
+use crate::ssh_transport_adapter::SshTransportAdapter;
 use ssh2::Session;
 use std::cell::RefCell;
 use std::env;
@@ -24,6 +25,22 @@ impl SshTransport {
             channel: RefCell::new(None),
             channel_opened: false,
         }
+    }
+
+    /// Consume the transport and expose a single-channel adapter for the relay protocol.
+    /// This is the only allowed channel; we do not permit multiplexing or additional channels.
+    pub fn into_adapter(self) -> Result<SshTransportAdapter, TransportError> {
+        if !self.channel_opened {
+            return Err(TransportError::ConnectionFailed);
+        }
+        if self.channel.borrow().is_none() || self.session.is_none() {
+            return Err(TransportError::ConnectionFailed);
+        }
+
+        let channel = self.channel.into_inner().ok_or(TransportError::ConnectionFailed)?;
+        let session = self.session.ok_or(TransportError::ConnectionFailed)?;
+
+        Ok(SshTransportAdapter::new(session, channel))
     }
 
     fn resolve_username() -> Option<String> {
