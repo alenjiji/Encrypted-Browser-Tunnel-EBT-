@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::marker::PhantomData;
+use crate::anonymity::invariants::AllowsRelayLocalLinkability;
 use crate::relay_protocol::{
     FrameEncoder, FrameDecoder, ControlMessage, DataFrame, 
     ConnectionTable, RelayLimits, ProtocolNegotiator
@@ -8,20 +10,22 @@ use crate::transport_adapter::{TransportCallbacks, TransportError};
 use crate::core::observability;
 use std::io::Cursor;
 
-pub struct ProtocolEngine {
+pub struct ProtocolEngine<Phase: AllowsRelayLocalLinkability> {
     connection_table: ConnectionTable,
     negotiator: ProtocolNegotiator,
     outbound_frames: HashMap<u32, Vec<Vec<u8>>>,
     frame_buffers: HashMap<u32, Vec<u8>>,
+    _phase: PhantomData<Phase>,
 }
 
-impl ProtocolEngine {
+impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
     pub fn new(limits: RelayLimits) -> Self {
         Self {
             connection_table: ConnectionTable::new(limits),
             negotiator: ProtocolNegotiator::new(),
             outbound_frames: HashMap::new(),
             frame_buffers: HashMap::new(),
+            _phase: PhantomData,
         }
     }
     
@@ -151,18 +155,18 @@ impl ProtocolEngine {
     }
 }
 
-pub struct ProtocolCallbacks {
-    engine: Arc<Mutex<ProtocolEngine>>,
+pub struct ProtocolCallbacks<Phase: AllowsRelayLocalLinkability> {
+    engine: Arc<Mutex<ProtocolEngine<Phase>>>,
     conn_id: u32,
 }
 
-impl ProtocolCallbacks {
-    pub fn new(engine: Arc<Mutex<ProtocolEngine>>, conn_id: u32) -> Self {
+impl<Phase: AllowsRelayLocalLinkability> ProtocolCallbacks<Phase> {
+    pub fn new(engine: Arc<Mutex<ProtocolEngine<Phase>>>, conn_id: u32) -> Self {
         Self { engine, conn_id }
     }
 }
 
-impl TransportCallbacks for ProtocolCallbacks {
+impl<Phase: AllowsRelayLocalLinkability> TransportCallbacks for ProtocolCallbacks<Phase> {
     fn on_bytes_received(&mut self, data: &[u8]) {
         if let Ok(mut engine) = self.engine.lock() {
             engine.on_transport_bytes(self.conn_id, data);

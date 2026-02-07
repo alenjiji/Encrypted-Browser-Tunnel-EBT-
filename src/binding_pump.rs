@@ -2,22 +2,29 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
+use std::marker::PhantomData;
+use crate::anonymity::invariants::{
+    AllowsDirectTimingCorrespondence,
+    AllowsRelayLocalLinkability,
+};
 use crate::protocol_engine::ProtocolEngine;
 use crate::transport_adapter::TransportAdapter;
 use crate::core::observability;
 
-pub struct BindingPump {
-    protocol_engine: Arc<Mutex<ProtocolEngine>>,
+pub struct BindingPump<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLocalLinkability> {
+    protocol_engine: Arc<Mutex<ProtocolEngine<Phase>>>,
     transports: HashMap<u32, Box<dyn TransportAdapter>>,
     running: Arc<Mutex<bool>>,
+    _phase: PhantomData<Phase>,
 }
 
-impl BindingPump {
-    pub fn new(protocol_engine: Arc<Mutex<ProtocolEngine>>) -> Self {
+impl<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLocalLinkability> BindingPump<Phase> {
+    pub fn new(protocol_engine: Arc<Mutex<ProtocolEngine<Phase>>>) -> Self {
         Self {
             protocol_engine,
             transports: HashMap::new(),
             running: Arc::new(Mutex::new(false)),
+            _phase: PhantomData,
         }
     }
     

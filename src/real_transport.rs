@@ -9,6 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::marker::PhantomData;
+use crate::anonymity::invariants::{
+    AllowsDirectTimingCorrespondence,
+    AllowsPerUserConnectionOwnership,
+    AllowsStableSocketMapping,
+};
 use crate::transport::{EncryptedTransport, TransportError};
 use crate::dns_resolver::{DnsResolver, DohResolver};
 use crate::relay_transport::{RelayTransport, DirectRelayTransport};
@@ -21,15 +27,20 @@ use crate::relay_transport::SingleHopRelayTransport;
 use crate::relay_transport::MultiHopRelayTransport;
 
 /// Real TCP transport implementation with direct connection
-pub struct DirectTcpTunnelTransport {
+pub struct DirectTcpTunnelTransport<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsDirectTimingCorrespondence> {
     target_host: String,
     target_port: u16,
     tcp_stream: Option<Arc<Mutex<TcpStream>>>,
     dns_resolver: DohResolver,
     relay_transport: Box<dyn RelayTransport>,
+    _phase: PhantomData<Phase>,
 }
 
-impl DirectTcpTunnelTransport {
+impl<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsDirectTimingCorrespondence> DirectTcpTunnelTransport<Phase> {
     pub fn new(target_host: String, target_port: u16) -> Result<Self, TransportError> {
         #[cfg(feature = "multi_hop_relay")]
         let relay_transport: Box<dyn RelayTransport> = Box::new(MultiHopRelayTransport::new(vec![
@@ -53,6 +64,7 @@ impl DirectTcpTunnelTransport {
             tcp_stream: None,
             dns_resolver: DohResolver::new(),
             relay_transport,
+            _phase: PhantomData,
         })
     }
     
@@ -206,7 +218,9 @@ impl DirectTcpTunnelTransport {
     }
 }
 
-impl EncryptedTransport for DirectTcpTunnelTransport {
+impl<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsDirectTimingCorrespondence> EncryptedTransport for DirectTcpTunnelTransport<Phase> {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
         // Resolve hostname using DoH resolver (no plaintext DNS)
         let mut ips = self.dns_resolver.resolve(&self.target_host).await

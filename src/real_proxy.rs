@@ -6,6 +6,7 @@ use std::net::{TcpListener as StdTcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::marker::PhantomData;
 use std::thread;
 use crate::config::ProxyPolicy;
 use crate::content_policy::{ContentPolicyEngine, Decision, RequestMetadata};
@@ -17,6 +18,12 @@ use crate::core::observability;
 use tokio::task;
 use tokio::sync::Semaphore;
 use tokio::net::TcpListener;
+use crate::anonymity::invariants::{
+    AllowsDirectTimingCorrespondence,
+    AllowsPerUserConnectionOwnership,
+    AllowsRelayLocalLinkability,
+    AllowsStableSocketMapping,
+};
 
 lazy_static::lazy_static! {
     // Restore higher global concurrency for asset-heavy sites
@@ -45,13 +52,20 @@ impl std::error::Error for HeaderParseError {}
 
 
 /// Real proxy server that binds to network interfaces
-pub struct RealProxyServer {
+pub struct RealProxyServer<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsDirectTimingCorrespondence
+    + AllowsRelayLocalLinkability> {
     policy: ProxyPolicy,
     listener: Option<TcpListener>,
     policy_adapter: Arc<PolicyAdapter>,
+    _phase: PhantomData<Phase>,
 }
 
-impl RealProxyServer {
+impl<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsDirectTimingCorrespondence
+    + AllowsRelayLocalLinkability> RealProxyServer<Phase> {
     pub fn new(
         policy: ProxyPolicy,
         policy_engine: ContentPolicyEngine,
@@ -66,6 +80,7 @@ impl RealProxyServer {
                 policy_engine,
                 content_policy_enabled,
             )),
+            _phase: PhantomData,
         }
     }
 
@@ -228,7 +243,7 @@ impl RealProxyServer {
             stream.flush()?;
             
             // Create transport for this specific CONNECT target
-            let mut transport = DirectTcpTunnelTransport::new(
+            let mut transport = DirectTcpTunnelTransport::<Phase>::new(
                 host.clone(),
                 port
             )?;

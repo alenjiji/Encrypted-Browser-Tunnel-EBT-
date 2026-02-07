@@ -34,6 +34,7 @@ mod transport_adapter;
 mod protocol_engine;
 mod connection_mapping;
 mod binding_pump;
+mod anonymity;
 mod content_policy;
 mod content_policy_bootstrap;
 #[cfg(test)]
@@ -46,6 +47,7 @@ mod async_tunnel;
 use std::error::Error;
 use config::{ProxyPolicy, TunnelConfig};
 use crate::content_policy_bootstrap::build_content_policy_engine;
+use crate::anonymity::invariants::LegacyPhase;
 
 #[cfg(feature = "tokio")]
 #[tokio::main]
@@ -101,7 +103,7 @@ async fn tokio_main() -> Result<(), Box<dyn Error>> {
     
     // Start accepting connections
     let (policy_engine, policy_enabled) = build_content_policy_engine(&proxy_policy);
-    let mut real_proxy = crate::real_proxy::RealProxyServer::new(
+    let mut real_proxy = crate::real_proxy::RealProxyServer::<LegacyPhase>::new(
         proxy_policy.clone(),
         policy_engine,
         policy_enabled,

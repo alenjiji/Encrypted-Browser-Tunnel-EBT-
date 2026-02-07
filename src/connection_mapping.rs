@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use std::marker::PhantomData;
+use crate::anonymity::invariants::{
+    AllowsPerUserConnectionOwnership,
+    AllowsRelayLocalLinkability,
+    AllowsStableSocketMapping,
+};
 use crate::transport_adapter::{TcpTransportAdapter, TransportAdapter};
 use crate::protocol_engine::ProtocolEngine;
 
@@ -10,15 +16,20 @@ pub struct BrowserSocketId(usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogicalConnectionId(u32);
 
-pub struct ConnectionMapping {
+pub struct ConnectionMapping<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsRelayLocalLinkability> {
     socket_to_logical: HashMap<BrowserSocketId, LogicalConnectionId>,
     logical_to_socket: HashMap<LogicalConnectionId, BrowserSocketId>,
     logical_to_transport: HashMap<LogicalConnectionId, Box<dyn TransportAdapter>>,
     next_socket_id: usize,
     next_logical_id: u32,
+    _phase: PhantomData<Phase>,
 }
 
-impl ConnectionMapping {
+impl<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsRelayLocalLinkability> ConnectionMapping<Phase> {
     pub fn new() -> Self {
         Self {
             socket_to_logical: HashMap::new(),
@@ -26,13 +37,14 @@ impl ConnectionMapping {
             logical_to_transport: HashMap::new(),
             next_socket_id: 1,
             next_logical_id: 1,
+            _phase: PhantomData,
         }
     }
     
     pub fn create_mapping(
         &mut self, 
         browser_socket: TcpStream,
-        _protocol_engine: &Arc<Mutex<ProtocolEngine>>
+        _protocol_engine: &Arc<Mutex<ProtocolEngine<Phase>>>
     ) -> Result<(BrowserSocketId, LogicalConnectionId), &'static str> {
         let socket_id = BrowserSocketId(self.next_socket_id);
         self.next_socket_id += 1;
@@ -66,7 +78,7 @@ impl ConnectionMapping {
     pub fn on_browser_socket_closed(
         &mut self, 
         socket_id: BrowserSocketId,
-        protocol_engine: &Arc<Mutex<ProtocolEngine>>
+        protocol_engine: &Arc<Mutex<ProtocolEngine<Phase>>>
     ) {
         if let Some(_logical_id) = self.socket_to_logical.get(&socket_id) {
             // Notify protocol engine of socket close - do NOT destroy state
@@ -85,7 +97,7 @@ impl ConnectionMapping {
     pub fn protocol_close_connection(
         &mut self,
         logical_id: LogicalConnectionId,
-        _protocol_engine: &Arc<Mutex<ProtocolEngine>>
+        _protocol_engine: &Arc<Mutex<ProtocolEngine<Phase>>>
     ) {
         // Protocol-initiated cleanup - remove all mappings
         if let Some(socket_id) = self.logical_to_socket.remove(&logical_id) {
@@ -104,16 +116,22 @@ impl ConnectionMapping {
     }
 }
 
-pub struct ConnectionManager {
-    mapping: Arc<Mutex<ConnectionMapping>>,
-    protocol_engine: Arc<Mutex<ProtocolEngine>>,
+pub struct ConnectionManager<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsRelayLocalLinkability> {
+    mapping: Arc<Mutex<ConnectionMapping<Phase>>>,
+    protocol_engine: Arc<Mutex<ProtocolEngine<Phase>>>,
+    _phase: PhantomData<Phase>,
 }
 
-impl ConnectionManager {
-    pub fn new(protocol_engine: Arc<Mutex<ProtocolEngine>>) -> Self {
+impl<Phase: AllowsPerUserConnectionOwnership
+    + AllowsStableSocketMapping
+    + AllowsRelayLocalLinkability> ConnectionManager<Phase> {
+    pub fn new(protocol_engine: Arc<Mutex<ProtocolEngine<Phase>>>) -> Self {
         Self {
             mapping: Arc::new(Mutex::new(ConnectionMapping::new())),
             protocol_engine,
+            _phase: PhantomData,
         }
     }
     

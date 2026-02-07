@@ -6,6 +6,7 @@ use crate::real_transport::DirectTcpTunnelTransport;
 use crate::real_proxy::RealProxyServer;
 use crate::real_dns::RealDnsResolver;
 use crate::content_policy_bootstrap::build_content_policy_engine;
+use crate::anonymity::invariants::LegacyPhase;
 
 /// Error when required capability is not available
 #[derive(Debug)]
@@ -149,7 +150,7 @@ impl TunnelSession {
         // Select real transport based on TransportKind
         match transport_config.kind {
             TransportKind::Tls => {
-                let mut real_transport = DirectTcpTunnelTransport::new(
+                let mut real_transport = DirectTcpTunnelTransport::<LegacyPhase>::new(
                     transport_config.target_host.clone(),
                     transport_config.target_port
                 )?;
@@ -180,7 +181,7 @@ impl TunnelSession {
         println!("=== Starting Real Proxy Server ===");
 
         let (policy_engine, policy_enabled) = build_content_policy_engine(proxy_policy);
-        let mut real_proxy = RealProxyServer::new(
+        let mut real_proxy = RealProxyServer::<LegacyPhase>::new(
             proxy_policy.clone(),
             policy_engine,
             policy_enabled,
