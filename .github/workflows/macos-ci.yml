@@ -7,8 +7,19 @@ on:
 jobs:
   macos-build:
     runs-on: [self-hosted, macos]
+    timeout-minutes: 30
+    env:
+      ACTIONS_RUNNER_DEBUG: "true"
+      ACTIONS_STEP_DEBUG: "true"
     
     steps:
+    - name: Preflight network check
+      run: |
+        set -euo pipefail
+        echo "Checking GitHub connectivity..."
+        curl -I --retry 3 --retry-delay 2 https://github.com
+        curl -I --retry 3 --retry-delay 2 https://codeload.github.com
+    
     - uses: actions/checkout@v4
     
     - name: Install Rust
