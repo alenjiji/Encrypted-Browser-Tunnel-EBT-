@@ -89,7 +89,7 @@ impl RealDnsResolver {
     /// Detect if local resolution is being attempted when remote is required
     fn detect_local_resolution_attempt(&self) -> bool {
         // In real implementation, this would check system DNS configuration
-        // For educational purposes, assume no leak detected
+        // For testing purposes, assume no leak detected
         false
     }
     
@@ -102,7 +102,7 @@ impl RealDnsResolver {
         // 2. Relay performs DNS resolution on remote network
         // 3. Return response through tunnel
         
-        // Educational placeholder response
+        // Placeholder response
         Ok(DnsResponse {
             domain: query.domain,
             ip_address: Some(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))), // example.com
@@ -115,7 +115,7 @@ impl RealDnsResolver {
         println!("Real DNS: Resolving via local system (policy allows)");
         
         // In real implementation, this would use system DNS resolver
-        // Educational placeholder response
+        // Placeholder response
         Ok(DnsResponse {
             domain: query.domain,
             ip_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), // localhost

@@ -36,7 +36,7 @@ mod crypto_transport_tests {
         assert!(!exit_interface.has_source_ip());
         
         let context = InvariantContext {
-            component_name: "exit_zone".to_string(),
+            component_name: "exit_node".to_string(),
             has_source_ip: exit_interface.has_source_ip(),
             has_destination_hostname: exit_interface.has_destination_hostname(),
             traffic_encrypted: true,
