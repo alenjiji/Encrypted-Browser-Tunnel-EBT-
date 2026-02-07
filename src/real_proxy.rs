@@ -206,42 +206,12 @@ impl RealProxyServer {
             
             log!(LogLevel::Debug, "CONNECT tunnel requested");
 
-            let policy_enabled = policy_adapter.is_enabled();
-            if policy_enabled {
-                let headers = parse_headers(&request);
-                let full_url = format!("https://{}:{}", host, port);
-                let metadata = RequestMetadata::new(
-                    "CONNECT".to_string(),
-                    full_url,
-                    host.clone(),
-                    port,
-                    headers,
-                );
-                match policy_adapter.evaluate(&metadata) {
-                    Decision::Allow => {
-                        observability::record_policy_allowed();
-                    }
-                    Decision::Block { reason } => {
-                        observability::record_policy_blocked();
-                        match reason {
-                            crate::content_policy::ReasonCode::Ads => {
-                                observability::record_policy_blocked_ads();
-                            }
-                            crate::content_policy::ReasonCode::Tracking => {
-                                observability::record_policy_blocked_tracking();
-                            }
-                            crate::content_policy::ReasonCode::Custom => {
-                                observability::record_policy_blocked_custom();
-                            }
-                            crate::content_policy::ReasonCode::Unknown => {}
-                        }
-                        let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
-                        stream.write_all(response)?;
-                        stream.flush()?;
-                        let _ = stream.shutdown(std::net::Shutdown::Both);
-                        return Ok(());
-                    }
-                }
+            if !policy_allows_connect(policy_adapter.as_ref(), &request, &host, port) {
+                let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+                stream.write_all(response)?;
+                stream.flush()?;
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Ok(());
             }
             
             // Handle CONNECT request for HTTPS tunneling
@@ -494,4 +464,118 @@ fn parse_headers(request: &str) -> std::collections::BTreeMap<String, String> {
         }
     }
     headers
+}
+
+fn build_connect_metadata(request: &str, host: &str, port: u16) -> RequestMetadata {
+    let headers = parse_headers(request);
+    let full_url = format!("https://{}:{}", host, port);
+    RequestMetadata::new(
+        "CONNECT".to_string(),
+        full_url,
+        host.to_string(),
+        port,
+        headers,
+    )
+}
+
+fn policy_allows_connect(
+    policy_adapter: &PolicyAdapter,
+    request: &str,
+    host: &str,
+    port: u16,
+) -> bool {
+    if !policy_adapter.is_enabled() {
+        return true;
+    }
+
+    let metadata = build_connect_metadata(request, host, port);
+    match policy_adapter.evaluate(&metadata) {
+        Decision::Allow => {
+            observability::record_policy_allowed();
+            true
+        }
+        Decision::Block { reason } => {
+            observability::record_policy_blocked();
+            match reason {
+                crate::content_policy::ReasonCode::Ads => {
+                    observability::record_policy_blocked_ads();
+                }
+                crate::content_policy::ReasonCode::Tracking => {
+                    observability::record_policy_blocked_tracking();
+                }
+                crate::content_policy::ReasonCode::Custom => {
+                    observability::record_policy_blocked_custom();
+                }
+                crate::content_policy::ReasonCode::Unknown => {}
+            }
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content_policy::{ReasonCode, Rule, RuleAction};
+
+    fn make_adapter(rules: Vec<Rule>, enabled: bool) -> PolicyAdapter {
+        PolicyAdapter::new(ContentPolicyEngine::new(RuleSet::new(rules)), enabled)
+    }
+
+    #[test]
+    fn blocked_requests_do_not_reach_connect() {
+        let adapter = make_adapter(
+            vec![Rule::DomainExact {
+                domain: "blocked.example.com".to_string(),
+                action: RuleAction::Block(ReasonCode::Custom),
+            }],
+            true,
+        );
+        let request = "CONNECT blocked.example.com:443 HTTP/1.1\r\nHost: blocked.example.com\r\n\r\n";
+
+        assert!(!policy_allows_connect(
+            &adapter,
+            request,
+            "blocked.example.com",
+            443
+        ));
+    }
+
+    #[test]
+    fn allowed_requests_behave_like_phase6_when_disabled() {
+        let adapter = make_adapter(
+            vec![Rule::DomainExact {
+                domain: "blocked.example.com".to_string(),
+                action: RuleAction::Block(ReasonCode::Ads),
+            }],
+            false,
+        );
+        let request = "CONNECT blocked.example.com:443 HTTP/1.1\r\nHost: blocked.example.com\r\n\r\n";
+
+        assert!(policy_allows_connect(
+            &adapter,
+            request,
+            "blocked.example.com",
+            443
+        ));
+    }
+
+    #[test]
+    fn allowed_rule_proceeds_when_enabled() {
+        let adapter = make_adapter(
+            vec![Rule::DomainExact {
+                domain: "allowed.example.com".to_string(),
+                action: RuleAction::Allow,
+            }],
+            true,
+        );
+        let request = "CONNECT allowed.example.com:443 HTTP/1.1\r\nHost: allowed.example.com\r\n\r\n";
+
+        assert!(policy_allows_connect(
+            &adapter,
+            request,
+            "allowed.example.com",
+            443
+        ));
+    }
 }

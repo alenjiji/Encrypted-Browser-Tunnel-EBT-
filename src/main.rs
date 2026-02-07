@@ -35,6 +35,8 @@ mod protocol_engine;
 mod connection_mapping;
 mod binding_pump;
 mod content_policy;
+#[cfg(test)]
+mod phase7_5_invariants_tests;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
