@@ -1,15 +1,16 @@
 use rand::rngs::OsRng;
+use rand::{CryptoRng, RngCore};
 use rand::seq::SliceRandom;
 
 pub type Frame = Vec<u8>;
 
-pub struct MixingPool {
+pub struct MixingPool<R: RngCore + CryptoRng = OsRng> {
     current_epoch: Vec<Frame>,
     next_epoch: Vec<Frame>,
-    rng: OsRng,
+    rng: R,
 }
 
-impl Default for MixingPool {
+impl Default for MixingPool<OsRng> {
     fn default() -> Self {
         Self {
             current_epoch: Vec::new(),
@@ -19,7 +20,21 @@ impl Default for MixingPool {
     }
 }
 
-impl MixingPool {
+impl MixingPool<OsRng> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<R: RngCore + CryptoRng> MixingPool<R> {
+    pub fn with_rng(rng: R) -> Self {
+        Self {
+            current_epoch: Vec::new(),
+            next_epoch: Vec::new(),
+            rng,
+        }
+    }
+
     pub fn enqueue(&mut self, frame: Frame) {
         self.next_epoch.push(frame);
     }

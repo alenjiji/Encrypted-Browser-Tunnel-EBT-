@@ -41,6 +41,8 @@ mod content_policy;
 mod content_policy_bootstrap;
 #[cfg(test)]
 mod phase7_5_invariants_tests;
+#[cfg(test)]
+mod phase9_correlation_tests;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]

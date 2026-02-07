@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 
 use rand::rngs::OsRng;
 use rand::seq::SliceRandom;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 
 use crate::anonymity::mixing::Frame;
 
 pub trait DelayDistribution {
-    fn sample_delay(&mut self, rng: &mut OsRng) -> Duration;
+    fn sample_delay(&mut self, rng: &mut dyn RngCore) -> Duration;
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ impl UniformDelay {
 }
 
 impl DelayDistribution for UniformDelay {
-    fn sample_delay(&mut self, rng: &mut OsRng) -> Duration {
+    fn sample_delay(&mut self, rng: &mut dyn RngCore) -> Duration {
         let span = self.max_ns.saturating_sub(self.min_ns);
         let offset = if span == 0 {
             0
@@ -73,29 +73,39 @@ impl Ord for PendingFrame {
     }
 }
 
-pub struct DelayQueue<D: DelayDistribution> {
+pub struct DelayQueue<D: DelayDistribution, R: RngCore + CryptoRng = OsRng> {
     distribution: D,
-    rng: OsRng,
+    rng: R,
     pending: BinaryHeap<std::cmp::Reverse<PendingFrame>>,
     ready: VecDeque<Frame>,
 }
 
-impl<D: DelayDistribution> DelayQueue<D> {
+impl<D: DelayDistribution> DelayQueue<D, OsRng> {
     pub fn new(distribution: D) -> Self {
+        Self::with_rng(distribution, OsRng)
+    }
+}
+
+impl<D: DelayDistribution, R: RngCore + CryptoRng> DelayQueue<D, R> {
+    pub fn with_rng(distribution: D, rng: R) -> Self {
         Self {
             distribution,
-            rng: OsRng,
+            rng,
             pending: BinaryHeap::new(),
             ready: VecDeque::new(),
         }
     }
 
     pub fn enqueue(&mut self, frame: Frame) {
+        self.enqueue_at(Instant::now(), frame);
+    }
+
+    pub fn enqueue_at(&mut self, now: Instant, frame: Frame) {
         let mut delay = self.distribution.sample_delay(&mut self.rng);
         if delay.is_zero() {
             delay = Duration::from_nanos(1);
         }
-        let ready_at = Instant::now() + delay;
+        let ready_at = now + delay;
         let nonce = self.rng.next_u64();
         self.pending.push(std::cmp::Reverse(PendingFrame {
             ready_at,
@@ -105,11 +115,15 @@ impl<D: DelayDistribution> DelayQueue<D> {
     }
 
     pub fn drain_ready(&mut self, max_frames: usize) -> Vec<Frame> {
+        self.drain_ready_at(Instant::now(), max_frames)
+    }
+
+    pub fn drain_ready_at(&mut self, now: Instant, max_frames: usize) -> Vec<Frame> {
         if max_frames == 0 {
             return Vec::new();
         }
 
-        self.collect_ready();
+        self.collect_ready(now);
 
         let mut drained = Vec::new();
         while drained.len() < max_frames {
@@ -122,8 +136,7 @@ impl<D: DelayDistribution> DelayQueue<D> {
         drained
     }
 
-    fn collect_ready(&mut self) {
-        let now = Instant::now();
+    fn collect_ready(&mut self, now: Instant) {
         let mut ready = Vec::new();
         while let Some(std::cmp::Reverse(peek)) = self.pending.peek() {
             if peek.ready_at > now {
