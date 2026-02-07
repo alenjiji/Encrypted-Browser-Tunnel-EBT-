@@ -141,3 +141,95 @@ fn host_matches_suffix(host: &str, suffix: &str) -> bool {
     let dot_index = host_len - suffix_len - 1;
     host.as_bytes().get(dot_index) == Some(&b'.')
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentPolicyEngine {
+    rules: RuleSet,
+}
+
+impl ContentPolicyEngine {
+    pub fn new(rules: RuleSet) -> Self {
+        Self { rules }
+    }
+
+    pub fn evaluate(&self, request: &RequestMetadata) -> Decision {
+        self.rules.evaluate(request).unwrap_or(Decision::Allow)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_request() -> RequestMetadata {
+        let mut headers = BTreeMap::new();
+        headers.insert("User-Agent".to_string(), "EBT-Test".to_string());
+        RequestMetadata::new(
+            "GET".to_string(),
+            "https://ads.example.com/banner".to_string(),
+            "ads.example.com".to_string(),
+            443,
+            headers,
+        )
+    }
+
+    #[test]
+    fn deterministic_same_input_same_output() {
+        let rules = RuleSet::new(vec![Rule::DomainSuffix {
+            suffix: "example.com".to_string(),
+            action: RuleAction::Block(ReasonCode::Ads),
+        }]);
+        let engine = ContentPolicyEngine::new(rules);
+        let request = sample_request();
+
+        let first = engine.evaluate(&request);
+        let second = engine.evaluate(&request);
+        let third = engine.evaluate(&request);
+
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+        assert_eq!(first, Decision::Block { reason: ReasonCode::Ads });
+    }
+
+    #[test]
+    fn rule_ordering_first_match_wins() {
+        let rules = RuleSet::new(vec![
+            Rule::DomainSuffix {
+                suffix: "example.com".to_string(),
+                action: RuleAction::Block(ReasonCode::Tracking),
+            },
+            Rule::DomainExact {
+                domain: "ads.example.com".to_string(),
+                action: RuleAction::Allow,
+            },
+        ]);
+        let engine = ContentPolicyEngine::new(rules);
+        let request = sample_request();
+
+        assert_eq!(
+            engine.evaluate(&request),
+            Decision::Block {
+                reason: ReasonCode::Tracking
+            }
+        );
+    }
+
+    #[test]
+    fn deterministic_multiple_evaluations_same_result() {
+        let rules = RuleSet::new(vec![Rule::UrlPrefix {
+            prefix: "https://ads.example.com/".to_string(),
+            action: RuleAction::Block(ReasonCode::Ads),
+        }]);
+        let engine = ContentPolicyEngine::new(rules);
+        let request = sample_request();
+
+        for _ in 0..10 {
+            assert_eq!(
+                engine.evaluate(&request),
+                Decision::Block {
+                    reason: ReasonCode::Ads
+                }
+            );
+        }
+    }
+}
