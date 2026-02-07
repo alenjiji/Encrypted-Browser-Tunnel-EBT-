@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use crate::anonymity::invariants::AllowsRelayLocalLinkability;
 use crate::relay_protocol::{
-    FrameEncoder, FrameDecoder, ControlMessage, DataFrame, 
+    FrameEncoder, FrameDecoder, LegacyControlMessage, LegacyDataFrame, 
     ConnectionTable, RelayLimits, ProtocolNegotiator
 };
 use crate::transport_adapter::{TransportCallbacks, TransportError};
@@ -53,12 +53,12 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
         for (_version, frame_type, payload) in parsed_frames {
             match frame_type {
                 crate::relay_protocol::FrameType::Control => {
-                    if let Ok(control_msg) = ControlMessage::decode(&payload) {
+                    if let Ok(control_msg) = LegacyControlMessage::decode(&payload) {
                         self.process_control_message(conn_id, control_msg);
                     }
                 }
                 crate::relay_protocol::FrameType::Data => {
-                    if let Ok(data_frame) = DataFrame::decode(&payload) {
+                    if let Ok(data_frame) = LegacyDataFrame::decode(&payload) {
                         self.process_data_frame(data_frame);
                     }
                 }
@@ -71,7 +71,7 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
         self.outbound_frames.get_mut(&conn_id)?.pop()
     }
     
-    pub fn queue_control_message(&mut self, conn_id: u32, message: ControlMessage) {
+    pub fn queue_control_message(&mut self, conn_id: u32, message: LegacyControlMessage) {
         let payload = message.encode();
         let mut buffer = Vec::new();
         if FrameEncoder::encode_frame(
@@ -90,7 +90,7 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
             return Err("Insufficient credits");
         }
         
-        let frame = DataFrame::new(conn_id, data.to_vec());
+        let frame = LegacyDataFrame::new(conn_id, data.to_vec());
         let payload = frame.encode();
         let mut buffer = Vec::new();
         
@@ -108,50 +108,50 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
         }
     }
     
-    pub fn poll_control_frames(&mut self) -> Vec<(u32, ControlMessage)> {
+    pub fn poll_control_frames(&mut self) -> Vec<(u32, LegacyControlMessage)> {
         let frames = self.connection_table.poll_control_frames();
         for frame in &frames {
             let conn_id = match frame {
-                ControlMessage::Open { conn_id, .. } => *conn_id,
-                ControlMessage::Close { conn_id, .. } => *conn_id,
-                ControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
-                ControlMessage::Error { conn_id, .. } => *conn_id,
-                ControlMessage::Hello { .. } => 0,
+                LegacyControlMessage::Open { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Close { conn_id, .. } => *conn_id,
+                LegacyControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Error { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Hello { .. } => 0,
             };
             self.queue_control_message(conn_id, frame.clone());
         }
         frames.into_iter().map(|msg| {
             let conn_id = match &msg {
-                ControlMessage::Open { conn_id, .. } => *conn_id,
-                ControlMessage::Close { conn_id, .. } => *conn_id,
-                ControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
-                ControlMessage::Error { conn_id, .. } => *conn_id,
-                ControlMessage::Hello { .. } => 0,
+                LegacyControlMessage::Open { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Close { conn_id, .. } => *conn_id,
+                LegacyControlMessage::WindowUpdate { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Error { conn_id, .. } => *conn_id,
+                LegacyControlMessage::Hello { .. } => 0,
             };
             (conn_id, msg)
         }).collect()
     }
     
-    fn process_control_message(&mut self, conn_id: u32, message: ControlMessage) {
+    fn process_control_message(&mut self, conn_id: u32, message: LegacyControlMessage) {
         match message {
-            ControlMessage::Open { target_host: _, target_port: _, .. } => {
+            LegacyControlMessage::Open { target_host: _, target_port: _, .. } => {
                 if self.connection_table.open_connection(conn_id).is_ok() {
                     observability::record_connection_opened();
                 }
             }
-            ControlMessage::Close { reason: _, .. } => {
+            LegacyControlMessage::Close { reason: _, .. } => {
                 if self.connection_table.close_connection(conn_id).is_ok() {
                     observability::record_connection_closed();
                 }
             }
-            ControlMessage::WindowUpdate { credits, .. } => {
+            LegacyControlMessage::WindowUpdate { credits, .. } => {
                 let _ = self.connection_table.add_send_credits(conn_id, credits);
             }
             _ => {}
         }
     }
     
-    fn process_data_frame(&mut self, _frame: DataFrame) {
+    fn process_data_frame(&mut self, _frame: LegacyDataFrame) {
         // Forward data frame to appropriate connection
         // Implementation depends on specific relay logic
     }

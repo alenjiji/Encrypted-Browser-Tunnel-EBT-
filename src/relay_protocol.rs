@@ -23,7 +23,8 @@ pub enum ControlOpcode {
 }
 
 const PROTOCOL_VERSION_1: u8 = 1;
-const SUPPORTED_VERSIONS: &[u8] = &[PROTOCOL_VERSION_1];
+const PROTOCOL_VERSION_2: u8 = 2;
+const SUPPORTED_VERSIONS: &[u8] = &[PROTOCOL_VERSION_1, PROTOCOL_VERSION_2];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandshakeState {
@@ -47,7 +48,7 @@ impl ProtocolNegotiator {
         }
     }
     
-    pub fn process_hello(&mut self, version: u8, capability_flags: u32) -> Result<ControlMessage, &'static str> {
+    pub fn process_hello(&mut self, version: u8, capability_flags: u32) -> Result<LegacyControlMessage, &'static str> {
         if self.state != HandshakeState::WaitingForHello {
             return Err("Handshake already completed or failed");
         }
@@ -62,7 +63,7 @@ impl ProtocolNegotiator {
         self.state = HandshakeState::Negotiated;
         
         // Respond with our capabilities (flags are optional and ignorable)
-        Ok(ControlMessage::Hello { version, capability_flags: 0 }) // No capabilities for now
+        Ok(LegacyControlMessage::Hello { version, capability_flags: 0 }) // No capabilities for now
     }
     
     pub fn is_negotiated(&self) -> bool {
@@ -128,13 +129,13 @@ impl ConnectionTable {
     
     /// Relay is authoritative for flow control.
     /// This method generates control frames that MUST be sent to maintain protocol correctness.
-    pub fn poll_control_frames(&mut self) -> Vec<ControlMessage> {
+    pub fn poll_control_frames(&mut self) -> Vec<LegacyControlMessage> {
         let mut frames = Vec::new();
         let conn_ids: Vec<u32> = self.connections.keys().copied().collect();
         
         for conn_id in conn_ids {
             if let Some(credits) = self.calculate_window_update(conn_id) {
-                frames.push(ControlMessage::WindowUpdate { conn_id, credits });
+                frames.push(LegacyControlMessage::WindowUpdate { conn_id, credits });
                 // Update window immediately to prevent duplicate updates
                 if let Some(info) = self.connections.get_mut(&conn_id) {
                     info.send_window = info.send_window.saturating_add(credits).min(info.initial_window_size * 2);
@@ -288,7 +289,31 @@ impl ConnectionTable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ControlMessage {
+pub struct DataFrame {
+    pub payload: Vec<u8>,
+}
+
+impl DataFrame {
+    pub fn new(payload: Vec<u8>) -> Self {
+        Self { payload }
+    }
+    
+    pub fn encode(&self) -> Vec<u8> {
+        self.payload.clone()
+    }
+    
+    pub fn decode(payload: &[u8]) -> Result<Self, std::io::Error> {
+        Ok(DataFrame {
+            payload: payload.to_vec(),
+        })
+    }
+}
+
+const _: [(); 1] = [(); (std::mem::size_of::<DataFrame>() == std::mem::size_of::<Vec<u8>>()) as usize];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(note = "Phase 9 forbids stable relay-local identifiers; legacy control frames carry conn_id.")]
+pub enum LegacyControlMessage {
     Hello { version: u8, capability_flags: u32 },
     #[deprecated(note = "Phase 9 forbids one socket == one origin; Open binds a stable conn_id to a target.")]
     Open { conn_id: u32, target_host: String, target_port: u16 },
@@ -299,12 +324,12 @@ pub enum ControlMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[deprecated(note = "Phase 9 forbids relay-local packet linkage via stable conn_id; per-frame mixing is required.")]
-pub struct DataFrame {
+pub struct LegacyDataFrame {
     pub conn_id: u32,
     pub payload: Vec<u8>,
 }
 
-impl DataFrame {
+impl LegacyDataFrame {
     pub fn new(conn_id: u32, payload: Vec<u8>) -> Self {
         Self { conn_id, payload }
     }
@@ -327,24 +352,24 @@ impl DataFrame {
         let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
         let data = payload[4..].to_vec();
         
-        Ok(DataFrame {
+        Ok(LegacyDataFrame {
             conn_id,
             payload: data,
         })
     }
 }
 
-impl ControlMessage {
+impl LegacyControlMessage {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         
         match self {
-            ControlMessage::Hello { version, capability_flags } => {
+            LegacyControlMessage::Hello { version, capability_flags } => {
                 buf.push(ControlOpcode::Hello as u8);
                 buf.push(*version);
                 buf.extend_from_slice(&capability_flags.to_be_bytes());
             }
-            ControlMessage::Open { conn_id, target_host, target_port } => {
+            LegacyControlMessage::Open { conn_id, target_host, target_port } => {
                 buf.push(ControlOpcode::Open as u8);
                 buf.extend_from_slice(&conn_id.to_be_bytes());
                 let host_bytes = target_host.as_bytes();
@@ -352,17 +377,17 @@ impl ControlMessage {
                 buf.extend_from_slice(host_bytes);
                 buf.extend_from_slice(&target_port.to_be_bytes());
             }
-            ControlMessage::Close { conn_id, reason } => {
+            LegacyControlMessage::Close { conn_id, reason } => {
                 buf.push(ControlOpcode::Close as u8);
                 buf.extend_from_slice(&conn_id.to_be_bytes());
                 buf.push(*reason);
             }
-            ControlMessage::WindowUpdate { conn_id, credits } => {
+            LegacyControlMessage::WindowUpdate { conn_id, credits } => {
                 buf.push(ControlOpcode::WindowUpdate as u8);
                 buf.extend_from_slice(&conn_id.to_be_bytes());
                 buf.extend_from_slice(&credits.to_be_bytes());
             }
-            ControlMessage::Error { conn_id, code } => {
+            LegacyControlMessage::Error { conn_id, code } => {
                 buf.push(ControlOpcode::Error as u8);
                 buf.extend_from_slice(&conn_id.to_be_bytes());
                 buf.push(*code);
@@ -395,7 +420,7 @@ impl ControlMessage {
                 let capability_flags = u32::from_be_bytes([
                     payload[1], payload[2], payload[3], payload[4]
                 ]);
-                Ok(ControlMessage::Hello { version, capability_flags })
+                Ok(LegacyControlMessage::Hello { version, capability_flags })
             }
             0x01 => { // Open
                 if payload.len() < 4 {
@@ -433,7 +458,7 @@ impl ControlMessage {
                 let port_bytes = &payload[host_len..host_len + 2];
                 let target_port = u16::from_be_bytes([port_bytes[0], port_bytes[1]]);
                 
-                Ok(ControlMessage::Open { conn_id, target_host, target_port })
+                Ok(LegacyControlMessage::Open { conn_id, target_host, target_port })
             }
             0x02 => { // Close
                 if payload.len() < 5 {
@@ -444,7 +469,7 @@ impl ControlMessage {
                 }
                 let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
                 let reason = payload[4];
-                Ok(ControlMessage::Close { conn_id, reason })
+                Ok(LegacyControlMessage::Close { conn_id, reason })
             }
             0x03 => { // WindowUpdate
                 if payload.len() < 8 {
@@ -455,7 +480,7 @@ impl ControlMessage {
                 }
                 let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
                 let credits = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
-                Ok(ControlMessage::WindowUpdate { conn_id, credits })
+                Ok(LegacyControlMessage::WindowUpdate { conn_id, credits })
             }
             0x04 => { // Error
                 if payload.len() < 5 {
@@ -466,7 +491,7 @@ impl ControlMessage {
                 }
                 let conn_id = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
                 let code = payload[4];
-                Ok(ControlMessage::Error { conn_id, code })
+                Ok(LegacyControlMessage::Error { conn_id, code })
             }
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

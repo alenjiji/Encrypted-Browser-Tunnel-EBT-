@@ -6,7 +6,7 @@ use crate::content_policy::{
     ContentPolicyEngine, Decision, ReasonCode, RequestMetadata, Rule, RuleAction, RuleSet,
 };
 
-const RELAY_PROTOCOL_HASH_FNV1A_64: u64 = 0xfbdb_b367_ace8_3060;
+const RELAY_PROTOCOL_HASH_FNV1A_64: u64 = 0xebca_9436_14cd_9004;
 const TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0xbda8_fd8f_31bc_a152;
 const SSH_TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0x2ffc_5df5_ff08_37f3;
 
