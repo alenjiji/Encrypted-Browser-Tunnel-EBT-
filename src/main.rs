@@ -93,6 +93,7 @@ async fn tokio_main() -> Result<(), Box<dyn Error>> {
         bind_port: 8080,
         authentication: None,
         content_policy_enabled: false,
+        content_policy_rules: None,
     };
     
     println!("\n=== Starting Real Network Mode ===");

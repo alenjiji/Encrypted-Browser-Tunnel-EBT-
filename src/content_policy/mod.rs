@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 mod easylist;
 
+#[allow(unused_imports)]
 pub use easylist::ruleset_from_easylist;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

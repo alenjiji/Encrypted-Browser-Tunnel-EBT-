@@ -49,6 +49,7 @@ impl TunnelConfig {
                 bind_port: 8080,
                 authentication: None,
                 content_policy_enabled: false,
+                content_policy_rules: None,
             },
         }
     }
@@ -106,6 +107,7 @@ pub struct ProxyPolicy {
     pub bind_port: u16,
     pub authentication: Option<AuthenticationPlaceholder>,
     pub content_policy_enabled: bool,
+    pub content_policy_rules: Option<String>,
 }
 
 /// How the proxy should be exposed

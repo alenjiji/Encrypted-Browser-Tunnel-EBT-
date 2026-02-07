@@ -53,12 +53,13 @@ pub struct RealProxyServer {
 
 impl RealProxyServer {
     pub fn new(policy: ProxyPolicy) -> Self {
+        let content_policy_enabled = policy.content_policy_enabled;
         Self {
             policy,
             listener: None,
             policy_adapter: Arc::new(PolicyAdapter::new(
                 ContentPolicyEngine::new(RuleSet::default()),
-                policy.content_policy_enabled,
+                content_policy_enabled,
             )),
         }
     }
