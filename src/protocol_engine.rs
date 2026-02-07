@@ -168,7 +168,7 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolCallbacks<Phase> {
     }
 }
 
-impl<Phase: AllowsRelayLocalLinkability> TransportCallbacks for ProtocolCallbacks<Phase> {
+impl<Phase: AllowsRelayLocalLinkability + Send> TransportCallbacks for ProtocolCallbacks<Phase> {
     fn on_bytes_received(&mut self, data: &[u8]) {
         if let Ok(mut engine) = self.engine.lock() {
             engine.on_transport_bytes(self.conn_id, data);

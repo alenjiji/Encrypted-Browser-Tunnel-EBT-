@@ -29,11 +29,11 @@ where
     running: Arc<Mutex<bool>>,
 }
 
-impl<P, DD, ED, F> AnonymityBindingPump<P, DD, ED, F>
+impl<P: Send + 'static, DD, ED, F> AnonymityBindingPump<P, DD, ED, F>
 where
-    DD: DelayDistribution,
-    ED: EpochDurationDistribution,
-    F: EpochTransportFactory<P>,
+    DD: DelayDistribution + Send + 'static,
+    ED: EpochDurationDistribution + Send + 'static,
+    F: EpochTransportFactory<P> + 'static,
 {
     pub fn new(
         protocol: Arc<Mutex<AnonymityProtocolEngine>>,

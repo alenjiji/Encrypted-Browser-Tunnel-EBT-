@@ -18,7 +18,7 @@ pub struct BindingPump<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLoca
     _phase: PhantomData<Phase>,
 }
 
-impl<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLocalLinkability> BindingPump<Phase> {
+impl<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLocalLinkability + Send + 'static> BindingPump<Phase> {
     pub fn new(protocol_engine: Arc<Mutex<ProtocolEngine<Phase>>>) -> Self {
         Self {
             protocol_engine,

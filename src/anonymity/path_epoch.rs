@@ -55,7 +55,7 @@ impl<P, D: EpochDurationDistribution> PathEpoch<P, D, OsRng> {
 }
 
 impl<P, D: EpochDurationDistribution, R: RngCore + CryptoRng> PathEpoch<P, D, R> {
-    pub fn with_rng(paths: Vec<P>, distribution: D, mut rng: R) -> Result<Self, &'static str> {
+    pub fn with_rng(paths: Vec<P>, mut distribution: D, mut rng: R) -> Result<Self, &'static str> {
         if paths.is_empty() {
             return Err("path list must not be empty");
         }
