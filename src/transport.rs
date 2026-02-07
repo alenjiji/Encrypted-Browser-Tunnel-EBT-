@@ -5,11 +5,14 @@ pub trait EncryptedTransport {
     async fn decrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError>;
 }
 
+pub use crate::ssh_transport::SshTransport;
+
 #[derive(Debug)]
 pub enum TransportError {
     ConnectionFailed,
     EncryptionFailed,
     DecryptionFailed,
+    Unimplemented(&'static str),
 }
 
 impl std::fmt::Display for TransportError {
@@ -18,40 +21,12 @@ impl std::fmt::Display for TransportError {
             TransportError::ConnectionFailed => write!(f, "Transport connection failed"),
             TransportError::EncryptionFailed => write!(f, "Data encryption failed"),
             TransportError::DecryptionFailed => write!(f, "Data decryption failed"),
+            TransportError::Unimplemented(detail) => write!(f, "Unimplemented transport behavior: {detail}"),
         }
     }
 }
 
 impl std::error::Error for TransportError {}
-
-/// SSH-based encrypted transport
-pub struct SshTransport {
-    host: String,
-    port: u16,
-}
-
-impl SshTransport {
-    pub fn new(host: String, port: u16) -> Self {
-        Self { host, port }
-    }
-}
-
-impl EncryptedTransport for SshTransport {
-    async fn establish_connection(&mut self) -> Result<(), TransportError> {
-        println!("Establishing SSH connection to {}:{}", self.host, self.port);
-        Ok(())
-    }
-    
-    async fn encrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
-        println!("Encrypting {} bytes via SSH", data.len());
-        Ok(data.to_vec())
-    }
-    
-    async fn decrypt_data(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
-        println!("Decrypting {} bytes via SSH", data.len());
-        Ok(data.to_vec())
-    }
-}
 
 /// TLS-based encrypted transport
 pub struct TlsTransport {

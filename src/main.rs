@@ -3,6 +3,7 @@
 mod client;
 mod core;
 mod transport;
+mod ssh_transport;
 mod dns;
 mod session;
 mod config;
