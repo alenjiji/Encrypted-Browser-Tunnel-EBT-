@@ -326,6 +326,7 @@ mod tests {
         };
         
         // Act: Demonstrate successful establishment (educational placeholder)
+        let mut session = session;
         let result = session.establish_tunnel().await;
         
         // Assert: Educational demonstration shows successful flow
