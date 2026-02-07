@@ -290,6 +290,7 @@ impl ConnectionTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlMessage {
     Hello { version: u8, capability_flags: u32 },
+    #[deprecated(note = "Phase 9 forbids one socket == one origin; Open binds a stable conn_id to a target.")]
     Open { conn_id: u32, target_host: String, target_port: u16 },
     Close { conn_id: u32, reason: u8 },
     WindowUpdate { conn_id: u32, credits: u32 },
@@ -297,6 +298,7 @@ pub enum ControlMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[deprecated(note = "Phase 9 forbids relay-local packet linkage via stable conn_id; per-frame mixing is required.")]
 pub struct DataFrame {
     pub conn_id: u32,
     pub payload: Vec<u8>,

@@ -6,6 +6,7 @@ use crate::transport_adapter::{TransportAdapter, TransportCallbacks, TransportEr
 
 /// Transport adapter that exposes an SSH channel as a raw byte stream.
 /// This is intentionally single-channel and does not permit multiplexing.
+#[deprecated(note = "Phase 9 forbids one socket == one origin; single-channel SSH transport is linkable.")]
 pub struct SshTransportAdapter {
     _session: Session,
     channel: Arc<Mutex<Channel>>,

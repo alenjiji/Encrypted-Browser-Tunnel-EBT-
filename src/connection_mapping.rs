@@ -41,6 +41,7 @@ impl<Phase: AllowsPerUserConnectionOwnership
         }
     }
     
+    #[deprecated(note = "Phase 9 forbids per-user logical stream ownership; one logical stream == one user is invalid under anonymity mixing.")]
     pub fn create_mapping(
         &mut self, 
         browser_socket: TcpStream,
@@ -67,10 +68,12 @@ impl<Phase: AllowsPerUserConnectionOwnership
         Ok((socket_id, logical_id))
     }
     
+    #[deprecated(note = "Phase 9 forbids stable socket<->logical mapping; one socket == one origin is invalid.")]
     pub fn get_logical_id(&self, socket_id: BrowserSocketId) -> Option<LogicalConnectionId> {
         self.socket_to_logical.get(&socket_id).copied()
     }
     
+    #[deprecated(note = "Phase 9 forbids stable logical<->socket mapping; one socket == one origin is invalid.")]
     pub fn get_socket_id(&self, logical_id: LogicalConnectionId) -> Option<BrowserSocketId> {
         self.logical_to_socket.get(&logical_id).copied()
     }
@@ -109,6 +112,7 @@ impl<Phase: AllowsPerUserConnectionOwnership
         self.logical_to_transport.remove(&logical_id);
     }
     
+    #[deprecated(note = "Phase 9 forbids exposing full socket/logical mappings; relay-local linkability is disallowed.")]
     pub fn get_active_mappings(&self) -> Vec<(BrowserSocketId, LogicalConnectionId)> {
         self.socket_to_logical.iter()
             .map(|(&socket_id, &logical_id)| (socket_id, logical_id))

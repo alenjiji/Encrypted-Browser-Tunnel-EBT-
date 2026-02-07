@@ -66,6 +66,7 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
         }
     }
     
+    #[deprecated(note = "Phase 9 forbids direct FIFO dequeue per connection; timing must be mixed/delayed.")]
     pub fn next_outbound_frame(&mut self, conn_id: u32) -> Option<Vec<u8>> {
         self.outbound_frames.get_mut(&conn_id)?.pop()
     }
@@ -83,6 +84,7 @@ impl<Phase: AllowsRelayLocalLinkability> ProtocolEngine<Phase> {
         }
     }
     
+    #[deprecated(note = "Phase 9 forbids stable relay-local connection IDs; per-conn queues enable packet linkage.")]
     pub fn queue_data_frame(&mut self, conn_id: u32, data: &[u8]) -> Result<(), &'static str> {
         if !self.connection_table.can_send_data(conn_id, data.len() as u32) {
             return Err("Insufficient credits");

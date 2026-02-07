@@ -32,6 +32,7 @@ impl<Phase: AllowsDirectTimingCorrespondence + AllowsRelayLocalLinkability> Bind
         self.transports.insert(conn_id, transport);
     }
     
+    #[deprecated(note = "Phase 9 forbids direct FIFO timing between protocol and transport; binding must add mixing/delay.")]
     pub fn start(&mut self) {
         *self.running.lock().unwrap() = true;
         

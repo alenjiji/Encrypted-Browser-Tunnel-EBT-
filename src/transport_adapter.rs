@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
     ConnectionLost,
+    #[deprecated(note = "Phase 9 forbids treating transport backpressure as user behavior; WriteBlocked must not influence logic.")]
     WriteBlocked, // NOTE: Currently maps both protocol and OS-level backpressure
     ReadError,
     Timeout,
@@ -133,6 +134,7 @@ impl TransportHandle {
     }
 }
 
+#[deprecated(note = "Phase 9 forbids one socket == one origin; TCP adapter binds a single socket to a logical stream.")]
 pub struct TcpTransportAdapter {
     stream: Arc<Mutex<TcpStream>>,
 }

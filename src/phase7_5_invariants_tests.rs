@@ -6,9 +6,9 @@ use crate::content_policy::{
     ContentPolicyEngine, Decision, ReasonCode, RequestMetadata, Rule, RuleAction, RuleSet,
 };
 
-const RELAY_PROTOCOL_HASH_FNV1A_64: u64 = 0x4bd0_588c_8db3_0d29;
-const TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0x30a5_e935_3ff4_9642;
-const SSH_TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0x1d2d_7376_d8e3_6905;
+const RELAY_PROTOCOL_HASH_FNV1A_64: u64 = 0xfbdb_b367_ace8_3060;
+const TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0xbda8_fd8f_31bc_a152;
+const SSH_TRANSPORT_ADAPTER_HASH_FNV1A_64: u64 = 0x2ffc_5df5_ff08_37f3;
 
 #[test]
 fn relay_protocol_code_unchanged() {
