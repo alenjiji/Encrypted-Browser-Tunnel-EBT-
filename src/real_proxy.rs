@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::config::ProxyPolicy;
+use crate::content_policy::{ContentPolicyEngine, Decision, RequestMetadata, RuleSet};
 use crate::real_transport::DirectTcpTunnelTransport;
 use crate::transport::EncryptedTransport;
 use crate::logging::LogLevel;
@@ -46,6 +47,7 @@ impl std::error::Error for HeaderParseError {}
 pub struct RealProxyServer {
     policy: ProxyPolicy,
     listener: Option<TcpListener>,
+    policy_adapter: Arc<PolicyAdapter>,
 }
 
 impl RealProxyServer {
@@ -53,6 +55,7 @@ impl RealProxyServer {
         Self {
             policy,
             listener: None,
+            policy_adapter: Arc::new(PolicyAdapter::new(ContentPolicyEngine::new(RuleSet::default()))),
         }
     }
     
@@ -79,6 +82,7 @@ impl RealProxyServer {
                 // Handle each connection in a separate task
                 let (stream, _addr) = listener.accept().await?;
                 observability::record_connection_opened();
+                let policy_adapter = Arc::clone(&self.policy_adapter);
                 let stream = stream.into_std()?;
                 stream.set_nonblocking(false)?;
                 stream.set_nodelay(true).ok();
@@ -91,7 +95,7 @@ impl RealProxyServer {
                     };
                     
                     let handle = tokio::runtime::Handle::current();
-                    let result = task::spawn_blocking(move || handle.block_on(Self::handle_connection(stream)))
+                    let result = task::spawn_blocking(move || handle.block_on(Self::handle_connection(stream, policy_adapter)))
                         .await
                         .unwrap_or_else(|e| Err(e.into()));
                     observability::record_connection_closed();
@@ -118,7 +122,10 @@ impl RealProxyServer {
     }
     
     /// Handle a single client connection
-    async fn handle_connection(mut stream: TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_connection(
+        mut stream: TcpStream,
+        policy_adapter: Arc<PolicyAdapter>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Read HTTP request headers in chunks until \r\n\r\n
         let mut buffer = Vec::new();
         let mut chunk_buf = [0u8; 4096]; // 4KB chunks
@@ -190,6 +197,23 @@ impl RealProxyServer {
             };
             
             log!(LogLevel::Debug, "CONNECT tunnel requested");
+
+            let headers = parse_headers(&request);
+            let full_url = format!("https://{}:{}", host, port);
+            let metadata = RequestMetadata::new(
+                "CONNECT".to_string(),
+                full_url,
+                host.clone(),
+                port,
+                headers,
+            );
+            if matches!(policy_adapter.evaluate(&metadata), Decision::Block { .. }) {
+                let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+                stream.write_all(response)?;
+                stream.flush()?;
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+                return Ok(());
+            }
             
             // Handle CONNECT request for HTTPS tunneling
             let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
@@ -399,4 +423,34 @@ impl RealProxyServer {
             }
         }
     }
+}
+
+struct PolicyAdapter {
+    engine: ContentPolicyEngine,
+}
+
+impl PolicyAdapter {
+    fn new(engine: ContentPolicyEngine) -> Self {
+        Self { engine }
+    }
+
+    fn evaluate(&self, request: &RequestMetadata) -> Decision {
+        self.engine.evaluate(request)
+    }
+}
+
+fn parse_headers(request: &str) -> std::collections::BTreeMap<String, String> {
+    let mut headers = std::collections::BTreeMap::new();
+    let mut lines = request.lines();
+    lines.next();
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            headers.insert(name.trim().to_lowercase(), value.trim().to_string());
+        }
+    }
+    headers
 }
