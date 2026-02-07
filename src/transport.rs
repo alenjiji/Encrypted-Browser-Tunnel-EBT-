@@ -42,7 +42,7 @@ impl TlsTransport {
 
 impl EncryptedTransport for TlsTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
-        println!("Establishing TLS connection to {}:{}", self.host, self.port);
+        println!("Establishing TLS connection");
         Ok(())
     }
     
@@ -71,7 +71,7 @@ impl QuicTransport {
 
 impl EncryptedTransport for QuicTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
-        println!("Establishing QUIC connection to {}:{}", self.host, self.port);
+        println!("Establishing QUIC connection");
         Ok(())
     }
     

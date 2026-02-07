@@ -50,10 +50,10 @@ impl DnsResolver {
     pub async fn resolve(&self, query: DnsQuery) -> Result<DnsResponse, DnsError> {
         match self.resolver_type {
             ResolverType::Local => {
-                println!("Resolving {} via local DNS", query.domain);
+                println!("Resolving via local DNS");
             }
             ResolverType::Remote => {
-                println!("Resolving {} via remote DNS at {}", query.domain, self.server_address);
+                println!("Resolving via remote DNS");
             }
         }
         

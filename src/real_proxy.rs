@@ -189,7 +189,7 @@ impl RealProxyServer {
                 ("unknown".to_string(), 443u16)
             };
             
-            log!(LogLevel::Debug, "CONNECT tunnel requested to {}:{}", host, port);
+            log!(LogLevel::Debug, "CONNECT tunnel requested");
             
             // Handle CONNECT request for HTTPS tunneling
             let response = b"HTTP/1.1 200 Connection Established\r\n\r\n";
@@ -212,7 +212,7 @@ impl RealProxyServer {
             match transport.establish_connection().await {
                 Ok(_) => {},
                 Err(e) => {
-                    log!(LogLevel::Error, "Failed to establish connection to {}:{} - {}", host, port, e);
+                    log!(LogLevel::Error, "Failed to establish connection - {}", e);
                     return Err(e.into());
                 }
             }
@@ -266,7 +266,7 @@ impl RealProxyServer {
             return Err("Only absolute HTTP URLs supported".into());
         };
         
-        log!(LogLevel::Debug, "HTTP request to {}:{}", host, port);
+        log!(LogLevel::Debug, "HTTP request forwarding");
         
         // Connect to target server
         let mut target_stream = TcpStream::connect(format!("{}:{}", host, port))?;

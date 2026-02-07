@@ -102,7 +102,7 @@ impl TunnelSession {
         println!("=== Processing Request Flow ===");
         
         // Step 1: DNS Resolution via tunnel
-        println!("Step 1: DNS resolution for {}", target_domain);
+        println!("Step 1: DNS resolution");
         let dns_query = DnsQuery {
             domain: target_domain.to_string(),
             query_type: QueryType::A,

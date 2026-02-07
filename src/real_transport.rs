@@ -213,7 +213,7 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
             .map_err(|_| TransportError::ConnectionFailed)?;
         
         if ips.is_empty() {
-            log!(LogLevel::Error, "No IP addresses resolved for {}", self.target_host);
+            log!(LogLevel::Error, "No IP addresses resolved");
             return Err(TransportError::ConnectionFailed);
         }
         

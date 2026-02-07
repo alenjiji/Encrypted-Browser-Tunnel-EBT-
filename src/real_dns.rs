@@ -95,7 +95,7 @@ impl RealDnsResolver {
     
     /// Resolve DNS query via remote relay
     async fn resolve_remote(&self, query: DnsQuery) -> Result<DnsResponse, Box<dyn std::error::Error>> {
-        println!("Real DNS: Resolving '{}' via remote relay (policy enforced)", query.domain);
+        println!("Real DNS: Resolving via remote relay (policy enforced)");
         
         // In real implementation, this would:
         // 1. Send DNS query through the encrypted tunnel to relay
@@ -112,7 +112,7 @@ impl RealDnsResolver {
     
     /// Resolve DNS query locally (when policy allows)
     async fn resolve_local(&self, query: DnsQuery) -> Result<DnsResponse, Box<dyn std::error::Error>> {
-        println!("Real DNS: Resolving '{}' via local system (policy allows)", query.domain);
+        println!("Real DNS: Resolving via local system (policy allows)");
         
         // In real implementation, this would use system DNS resolver
         // Educational placeholder response
