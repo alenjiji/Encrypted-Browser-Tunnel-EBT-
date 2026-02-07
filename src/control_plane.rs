@@ -12,7 +12,7 @@ pub struct PublicKey(pub [u8; 32]);
 pub struct PrivateKey(pub [u8; 32]);
 
 #[derive(Debug, Clone)]
-pub struct EncryptedRoute(Vec<u8>);
+pub struct EncryptedRoute(pub Vec<u8>);
 
 #[derive(Debug, Clone)]
 pub struct HopKey(pub [u8; 32]);
