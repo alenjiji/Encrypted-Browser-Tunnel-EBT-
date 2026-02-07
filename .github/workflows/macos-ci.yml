@@ -30,6 +30,10 @@ jobs:
         echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
         echo "LDFLAGS=-L$(brew --prefix icu4c)/lib" >> $GITHUB_ENV
         echo "CPPFLAGS=-I$(brew --prefix icu4c)/include" >> $GITHUB_ENV
+        echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        echo "LDFLAGS=-L$(brew --prefix openssl@3)/lib $LDFLAGS" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I$(brew --prefix openssl@3)/include $CPPFLAGS" >> $GITHUB_ENV
     
     - name: Build
       run: |
