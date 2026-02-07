@@ -43,6 +43,8 @@ mod content_policy_bootstrap;
 mod content_policy_invariants_tests;
 #[cfg(test)]
 mod anonymity_correlation_tests;
+#[cfg(test)]
+mod anonymity_regression_gate;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
