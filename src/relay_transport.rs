@@ -2,10 +2,15 @@ use std::net::IpAddr;
 use std::io::Result;
 use socket2::{Socket, TcpKeepalive};
 use std::time::Duration;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 use async_trait::async_trait;
 #[cfg(feature = "encrypted_control")]
 use crate::control_channel::ControlChannel;
+use crate::logging::LogLevel;
+use crate::log;
+
+const CONNECT_RETRY_LIMIT: usize = 2;
+const CONNECT_RETRY_DELAY_MS: u64 = 150;
 
 #[async_trait]
 pub trait RelayTransport: Send {
@@ -14,6 +19,12 @@ pub trait RelayTransport: Send {
         target_ip: IpAddr,
         target_port: u16,
     ) -> Result<tokio::net::TcpStream>;
+}
+
+/// Optional warm-up for transport resources.
+/// Does NOT connect to any destination and does NOT resolve DNS.
+pub fn warm_up_transport_resources() {
+    // No-op placeholder for optional warm-up; must not allocate network resources.
 }
 
 pub struct DirectRelayTransport;
@@ -27,31 +38,44 @@ impl RelayTransport for DirectRelayTransport {
     ) -> Result<tokio::net::TcpStream> {
         let addr = (target_ip, target_port);
         
-        // Use shorter timeout for cold-start stability
-        let stream = timeout(
-            Duration::from_secs(2),
-            tokio::net::TcpStream::connect(addr)
-        ).await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timeout"))?;
-        
-        let stream = match stream {
-            Ok(s) => s,
-            Err(e) => {
-                // Ensure failed connections are properly cleaned up
-                return Err(std::io::Error::new(e.kind(), format!("Connection to {}:{} failed: {}", target_ip, target_port, e)));
+        let mut last_error = None;
+        for attempt in 0..=CONNECT_RETRY_LIMIT {
+            // Use shorter timeout for cold-start stability
+            let stream = timeout(
+                Duration::from_secs(2),
+                tokio::net::TcpStream::connect(addr)
+            ).await
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timeout"));
+
+            match stream {
+                Ok(Ok(s)) => {
+                    let stream = s;
+                    stream.set_nodelay(true)?;
+                    
+                    let socket = Socket::from(stream.into_std()?);
+                    socket.set_tcp_keepalive(
+                        &TcpKeepalive::new()
+                            .with_time(Duration::from_secs(30))
+                            .with_interval(Duration::from_secs(10))
+                    )?;
+                    
+                    return Ok(tokio::net::TcpStream::from_std(socket.into())?);
+                }
+                Ok(Err(e)) => {
+                    last_error = Some(std::io::Error::new(e.kind(), format!("Connection failed: {}", e)));
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                }
             }
-        };
-        
-        stream.set_nodelay(true)?;
-        
-        let socket = Socket::from(stream.into_std()?);
-        socket.set_tcp_keepalive(
-            &TcpKeepalive::new()
-                .with_time(Duration::from_secs(30))
-                .with_interval(Duration::from_secs(10))
-        )?;
-        
-        Ok(tokio::net::TcpStream::from_std(socket.into())?)
+
+            if attempt < CONNECT_RETRY_LIMIT {
+                log!(LogLevel::Debug, "Transport connect retry");
+                sleep(Duration::from_millis(CONNECT_RETRY_DELAY_MS)).await;
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Connect failed")))
     }
 }
 
