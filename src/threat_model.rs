@@ -59,7 +59,7 @@ pub mod invariants {
     /// Marker trait: Types that never parse HTTP after CONNECT
     pub trait NoHttpParsing {}
     
-    /// Marker trait: Types that never log destination identifiers
+    /// Marker trait: Types that never emit destination identifiers
     pub trait NoDestinationLogging {}
     
     /// Compile-time assertion: TLS payload inspection is forbidden
