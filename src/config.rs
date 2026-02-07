@@ -48,6 +48,7 @@ impl TunnelConfig {
                 bind_address: "proxy-bind.placeholder".to_string(),
                 bind_port: 8080,
                 authentication: None,
+                content_policy_enabled: false,
             },
         }
     }
@@ -104,6 +105,7 @@ pub struct ProxyPolicy {
     pub bind_address: String,
     pub bind_port: u16,
     pub authentication: Option<AuthenticationPlaceholder>,
+    pub content_policy_enabled: bool,
 }
 
 /// How the proxy should be exposed

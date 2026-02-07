@@ -5,6 +5,7 @@
 use std::net::{TcpListener as StdTcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use crate::config::ProxyPolicy;
 use crate::content_policy::{ContentPolicyEngine, Decision, RequestMetadata, RuleSet};
@@ -55,8 +56,15 @@ impl RealProxyServer {
         Self {
             policy,
             listener: None,
-            policy_adapter: Arc::new(PolicyAdapter::new(ContentPolicyEngine::new(RuleSet::default()))),
+            policy_adapter: Arc::new(PolicyAdapter::new(
+                ContentPolicyEngine::new(RuleSet::default()),
+                policy.content_policy_enabled,
+            )),
         }
+    }
+
+    pub fn set_content_policy_enabled(&self, enabled: bool) {
+        self.policy_adapter.set_enabled(enabled);
     }
     
     /// Bind to the configured address and port
@@ -198,21 +206,24 @@ impl RealProxyServer {
             
             log!(LogLevel::Debug, "CONNECT tunnel requested");
 
-            let headers = parse_headers(&request);
-            let full_url = format!("https://{}:{}", host, port);
-            let metadata = RequestMetadata::new(
-                "CONNECT".to_string(),
-                full_url,
-                host.clone(),
-                port,
-                headers,
-            );
-            if matches!(policy_adapter.evaluate(&metadata), Decision::Block { .. }) {
-                let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
-                stream.write_all(response)?;
-                stream.flush()?;
-                let _ = stream.shutdown(std::net::Shutdown::Both);
-                return Ok(());
+            let policy_enabled = policy_adapter.is_enabled();
+            if policy_enabled {
+                let headers = parse_headers(&request);
+                let full_url = format!("https://{}:{}", host, port);
+                let metadata = RequestMetadata::new(
+                    "CONNECT".to_string(),
+                    full_url,
+                    host.clone(),
+                    port,
+                    headers,
+                );
+                if matches!(policy_adapter.evaluate(&metadata), Decision::Block { .. }) {
+                    let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+                    stream.write_all(response)?;
+                    stream.flush()?;
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                    return Ok(());
+                }
             }
             
             // Handle CONNECT request for HTTPS tunneling
@@ -427,11 +438,23 @@ impl RealProxyServer {
 
 struct PolicyAdapter {
     engine: ContentPolicyEngine,
+    enabled: AtomicBool,
 }
 
 impl PolicyAdapter {
-    fn new(engine: ContentPolicyEngine) -> Self {
-        Self { engine }
+    fn new(engine: ContentPolicyEngine, enabled: bool) -> Self {
+        Self {
+            engine,
+            enabled: AtomicBool::new(enabled),
+        }
+    }
+
+    fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::Release);
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
     }
 
     fn evaluate(&self, request: &RequestMetadata) -> Decision {
