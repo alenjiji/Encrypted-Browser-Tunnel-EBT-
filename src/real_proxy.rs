@@ -586,4 +586,43 @@ mod tests {
             443
         ));
     }
+
+    #[test]
+    fn enabled_with_empty_rules_allows_all() {
+        let adapter = make_adapter(Vec::new(), true);
+        let request = "CONNECT empty.example.com:443 HTTP/1.1\r\nHost: empty.example.com\r\n\r\n";
+
+        assert!(policy_allows_connect(
+            &adapter,
+            request,
+            "empty.example.com",
+            443
+        ));
+    }
+
+    #[test]
+    fn enabled_with_rules_blocks_selectively() {
+        let adapter = make_adapter(
+            vec![Rule::DomainExact {
+                domain: "blocked.example.com".to_string(),
+                action: RuleAction::Block(ReasonCode::Tracking),
+            }],
+            true,
+        );
+        let blocked_request = "CONNECT blocked.example.com:443 HTTP/1.1\r\nHost: blocked.example.com\r\n\r\n";
+        let allowed_request = "CONNECT allowed.example.com:443 HTTP/1.1\r\nHost: allowed.example.com\r\n\r\n";
+
+        assert!(!policy_allows_connect(
+            &adapter,
+            blocked_request,
+            "blocked.example.com",
+            443
+        ));
+        assert!(policy_allows_connect(
+            &adapter,
+            allowed_request,
+            "allowed.example.com",
+            443
+        ));
+    }
 }

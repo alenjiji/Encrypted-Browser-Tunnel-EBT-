@@ -9,13 +9,13 @@ pub fn build_content_policy_engine(policy: &ProxyPolicy) -> (ContentPolicyEngine
     }
 
     let Some(path) = policy.content_policy_rules.as_ref() else {
-        return (ContentPolicyEngine::new(RuleSet::default()), false);
+        return (ContentPolicyEngine::new(RuleSet::default()), true);
     };
 
     let rules_text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(_) => {
-            return (ContentPolicyEngine::new(RuleSet::default()), false);
+            return (ContentPolicyEngine::new(RuleSet::default()), true);
         }
     };
 
