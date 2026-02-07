@@ -4,6 +4,8 @@ use crate::config::ProxyPolicy;
 use crate::content_policy::{ruleset_from_easylist, ContentPolicyEngine, RuleSet};
 
 pub fn build_content_policy_engine(policy: &ProxyPolicy) -> (ContentPolicyEngine, bool) {
+    // Phase 7.5 FROZEN: no auto-enablement, no dynamic reloads, no learning/inference.
+    // Policy remains proxy-edge only; this is a one-time startup snapshot.
     if !policy.content_policy_enabled {
         return (ContentPolicyEngine::new(RuleSet::default()), false);
     }

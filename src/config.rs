@@ -106,7 +106,9 @@ pub struct ProxyPolicy {
     pub bind_address: String,
     pub bind_port: u16,
     pub authentication: Option<AuthenticationPlaceholder>,
+    /// Phase 7.5 FROZEN: no auto-enablement, no learning/inference, proxy-edge only.
     pub content_policy_enabled: bool,
+    /// Phase 7.5 FROZEN: no auto-enablement, no dynamic reloads, proxy-edge only.
     pub content_policy_rules: Option<String>,
 }
 

@@ -57,6 +57,8 @@ impl RealProxyServer {
         policy_engine: ContentPolicyEngine,
         content_policy_enabled: bool,
     ) -> Self {
+        // Phase 7.5 FROZEN: no auto-enablement, no dynamic reloads, no learning/inference.
+        // Policy remains proxy-edge only.
         Self {
             policy,
             listener: None,
