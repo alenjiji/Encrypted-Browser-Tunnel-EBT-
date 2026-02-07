@@ -35,14 +35,14 @@ mod protocol_engine;
 mod connection_mapping;
 mod binding_pump;
 mod anonymity;
-mod phase9_protocol;
-mod phase9_binding;
+mod anonymity_protocol;
+mod anonymity_binding;
 mod content_policy;
 mod content_policy_bootstrap;
 #[cfg(test)]
-mod phase7_5_invariants_tests;
+mod content_policy_invariants_tests;
 #[cfg(test)]
-mod phase9_correlation_tests;
+mod anonymity_correlation_tests;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]

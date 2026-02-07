@@ -5,14 +5,14 @@ use std::io::Cursor;
 use crate::anonymity::mixing::MixingPool;
 use crate::relay_protocol::{DataFrame, FrameDecoder, FrameEncoder, FrameType, ProtocolVersion};
 
-const PHASE9_PROTOCOL_VERSION: ProtocolVersion = 2;
+const ANONYMITY_PROTOCOL_VERSION: ProtocolVersion = 2;
 
-pub struct Phase9ProtocolEngine {
+pub struct AnonymityProtocolEngine {
     outbound_pool: MixingPool,
     inbound_buffer: Vec<u8>,
 }
 
-impl Default for Phase9ProtocolEngine {
+impl Default for AnonymityProtocolEngine {
     fn default() -> Self {
         Self {
             outbound_pool: MixingPool::default(),
@@ -21,7 +21,7 @@ impl Default for Phase9ProtocolEngine {
     }
 }
 
-impl Phase9ProtocolEngine {
+impl AnonymityProtocolEngine {
     pub fn new() -> Self {
         Self::default()
     }
@@ -32,7 +32,7 @@ impl Phase9ProtocolEngine {
         let mut buffer = Vec::new();
         if FrameEncoder::encode_frame(
             &mut buffer,
-            PHASE9_PROTOCOL_VERSION,
+            ANONYMITY_PROTOCOL_VERSION,
             FrameType::Data,
             &payload,
         )
@@ -61,7 +61,7 @@ impl Phase9ProtocolEngine {
                     let consumed = cursor.position() as usize;
                     self.inbound_buffer.drain(..consumed);
 
-                    if version != PHASE9_PROTOCOL_VERSION || frame_type != FrameType::Data {
+                    if version != ANONYMITY_PROTOCOL_VERSION || frame_type != FrameType::Data {
                         continue;
                     }
 

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::anonymity::delay::{DelayDistribution, DelayQueue};
 use crate::anonymity::path_epoch::{EpochDurationDistribution, PathEpoch};
-use crate::phase9_protocol::Phase9ProtocolEngine;
+use crate::anonymity_protocol::AnonymityProtocolEngine;
 use crate::transport_adapter::{TransportAdapter, TransportError};
 
 const MAX_MIX_BATCH: usize = 64;
@@ -16,27 +16,27 @@ pub trait EpochTransportFactory<P>: Send {
     fn open_transport(&mut self, path: &P) -> Result<Box<dyn TransportAdapter>, TransportError>;
 }
 
-pub struct Phase9BindingPump<P, DD, ED, F>
+pub struct AnonymityBindingPump<P, DD, ED, F>
 where
     DD: DelayDistribution,
     ED: EpochDurationDistribution,
     F: EpochTransportFactory<P>,
 {
-    protocol: Arc<Mutex<Phase9ProtocolEngine>>,
+    protocol: Arc<Mutex<AnonymityProtocolEngine>>,
     delay: Option<DelayQueue<DD>>,
     path_epoch: Option<PathEpoch<P, ED>>,
     factory: Option<F>,
     running: Arc<Mutex<bool>>,
 }
 
-impl<P, DD, ED, F> Phase9BindingPump<P, DD, ED, F>
+impl<P, DD, ED, F> AnonymityBindingPump<P, DD, ED, F>
 where
     DD: DelayDistribution,
     ED: EpochDurationDistribution,
     F: EpochTransportFactory<P>,
 {
     pub fn new(
-        protocol: Arc<Mutex<Phase9ProtocolEngine>>,
+        protocol: Arc<Mutex<AnonymityProtocolEngine>>,
         delay: DelayQueue<DD>,
         path_epoch: PathEpoch<P, ED>,
         factory: F,
@@ -70,16 +70,22 @@ where
             while *running.lock().unwrap() {
                 let now = Instant::now();
 
+                let ready = delay.drain_ready_at(now, MAX_RELEASE_BATCH);
+
                 if path_epoch.rotate_if_due(now) {
                     if let Ok(new_transport) = factory.open_transport(path_epoch.current_path()) {
                         transport = new_transport;
                     } else {
+                        for frame in ready {
+                            if transport.send_bytes(&frame).is_err() {
+                                break;
+                            }
+                        }
                         *running.lock().unwrap() = false;
                         break;
                     }
                 }
 
-                let ready = delay.drain_ready_at(now, MAX_RELEASE_BATCH);
                 for frame in ready {
                     if transport.send_bytes(&frame).is_err() {
                         *running.lock().unwrap() = false;

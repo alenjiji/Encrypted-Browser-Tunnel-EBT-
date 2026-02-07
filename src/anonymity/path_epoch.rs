@@ -82,16 +82,23 @@ impl<P, D: EpochDurationDistribution, R: RngCore + CryptoRng> PathEpoch<P, D, R>
         &self.paths[self.current_index]
     }
 
+    pub fn path_at(&self, index: usize) -> &P {
+        &self.paths[index]
+    }
+
     pub fn epoch_nonce(&self) -> u64 {
         self.epoch_nonce
     }
 
-    pub fn rotate_if_due(&mut self, now: Instant) -> bool {
-        if now < self.next_rotation {
-            return false;
-        }
+    pub fn is_due(&self, now: Instant) -> bool {
+        now >= self.next_rotation
+    }
 
-        self.current_index = self.select_next_index();
+    pub fn next_index(&mut self) -> usize {
+        self.select_next_index()
+    }
+
+    pub fn schedule_next_rotation(&mut self, now: Instant) {
         let duration = self.distribution.sample_duration(&mut self.rng);
         let duration = if duration.is_zero() {
             Duration::from_nanos(1)
@@ -99,7 +106,21 @@ impl<P, D: EpochDurationDistribution, R: RngCore + CryptoRng> PathEpoch<P, D, R>
             duration
         };
         self.next_rotation = now + duration;
+    }
+
+    pub fn commit_rotation(&mut self, next_index: usize, now: Instant) {
+        self.current_index = next_index;
         self.epoch_nonce = self.rng.next_u64();
+        self.schedule_next_rotation(now);
+    }
+
+    pub fn rotate_if_due(&mut self, now: Instant) -> bool {
+        if !self.is_due(now) {
+            return false;
+        }
+
+        let next_index = self.select_next_index();
+        self.commit_rotation(next_index, now);
         true
     }
 
