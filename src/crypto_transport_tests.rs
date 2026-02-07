@@ -5,7 +5,7 @@ mod crypto_transport_tests {
     use crate::data_plane::*;
     use crate::key_management::*;
     use crate::zone_interfaces::*;
-    use crate::trust_boundaries::*;
+    use crate::trust_boundaries::{TrustZone, SessionId as TrustSessionId, EncryptedPayload as TrustEncryptedPayload, PlaintextPayload};
     use crate::threat_invariants::*;
 
     #[tokio::test]
@@ -97,7 +97,7 @@ mod crypto_transport_tests {
 
     #[tokio::test]
     async fn test_encrypted_payload_required_in_transit() {
-        let session_id = SessionId("test-session-001".to_string());
+        let session_id = TrustSessionId("test-session-001".to_string());
         
         let entry_manager = TunnelManager::new(TrustZone::Entry);
         let encrypted_payload = EncryptedPayload(vec![1, 2, 3, 4]);
@@ -115,7 +115,7 @@ mod crypto_transport_tests {
     #[tokio::test]
     async fn test_plaintext_only_in_local_and_exit_zones() {
         let exit_manager = TunnelManager::new(TrustZone::Exit);
-        let session_id = SessionId("test-session-002".to_string());
+        let session_id = TrustSessionId("test-session-002".to_string());
         let encrypted_payload = EncryptedPayload(vec![1, 2, 3, 4]);
         
         let result = exit_manager.process_inbound(&session_id, encrypted_payload).await;
