@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use crate::config::ProxyPolicy;
-use crate::content_policy::{ContentPolicyEngine, Decision, RequestMetadata, RuleSet};
+use crate::content_policy::{ContentPolicyEngine, Decision, RequestMetadata};
 use crate::real_transport::DirectTcpTunnelTransport;
 use crate::transport::EncryptedTransport;
 use crate::logging::LogLevel;
@@ -52,13 +52,16 @@ pub struct RealProxyServer {
 }
 
 impl RealProxyServer {
-    pub fn new(policy: ProxyPolicy) -> Self {
-        let content_policy_enabled = policy.content_policy_enabled;
+    pub fn new(
+        policy: ProxyPolicy,
+        policy_engine: ContentPolicyEngine,
+        content_policy_enabled: bool,
+    ) -> Self {
         Self {
             policy,
             listener: None,
             policy_adapter: Arc::new(PolicyAdapter::new(
-                ContentPolicyEngine::new(RuleSet::default()),
+                policy_engine,
                 content_policy_enabled,
             )),
         }
@@ -521,7 +524,7 @@ fn policy_allows_connect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content_policy::{ReasonCode, Rule, RuleAction};
+    use crate::content_policy::{ReasonCode, Rule, RuleAction, RuleSet};
 
     fn make_adapter(rules: Vec<Rule>, enabled: bool) -> PolicyAdapter {
         PolicyAdapter::new(ContentPolicyEngine::new(RuleSet::new(rules)), enabled)

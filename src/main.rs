@@ -35,6 +35,7 @@ mod protocol_engine;
 mod connection_mapping;
 mod binding_pump;
 mod content_policy;
+mod content_policy_bootstrap;
 #[cfg(test)]
 mod phase7_5_invariants_tests;
 #[cfg(feature = "encrypted_control")]
@@ -44,6 +45,7 @@ mod async_tunnel;
 
 use std::error::Error;
 use config::{ProxyPolicy, ProxyMode};
+use crate::content_policy_bootstrap::build_content_policy_engine;
 
 #[cfg(feature = "tokio")]
 #[tokio::main]
@@ -100,7 +102,12 @@ async fn tokio_main() -> Result<(), Box<dyn Error>> {
     // session.start_real_proxy(&proxy_policy)?;
     
     // Start accepting connections
-    let mut real_proxy = crate::real_proxy::RealProxyServer::new(proxy_policy.clone());
+    let (policy_engine, policy_enabled) = build_content_policy_engine(&proxy_policy);
+    let mut real_proxy = crate::real_proxy::RealProxyServer::new(
+        proxy_policy.clone(),
+        policy_engine,
+        policy_enabled,
+    );
     real_proxy.bind()?;
     
     // Optional transport warm-up (no DNS, no destinations)

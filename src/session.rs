@@ -5,6 +5,7 @@ use crate::config::{CapabilityPolicy, ExecutionMode, Capability, TransportConfig
 use crate::real_transport::DirectTcpTunnelTransport;
 use crate::real_proxy::RealProxyServer;
 use crate::real_dns::RealDnsResolver;
+use crate::content_policy_bootstrap::build_content_policy_engine;
 
 /// Error when required capability is not available
 #[derive(Debug)]
@@ -177,8 +178,13 @@ impl TunnelSession {
         self.ensure_capability(Capability::RealNetworking)?;
         
         println!("=== Starting Real Proxy Server ===");
-        
-        let mut real_proxy = RealProxyServer::new(proxy_policy.clone());
+
+        let (policy_engine, policy_enabled) = build_content_policy_engine(proxy_policy);
+        let mut real_proxy = RealProxyServer::new(
+            proxy_policy.clone(),
+            policy_engine,
+            policy_enabled,
+        );
         real_proxy.bind()?;
         
         println!("Real proxy server ready for browser connections");
