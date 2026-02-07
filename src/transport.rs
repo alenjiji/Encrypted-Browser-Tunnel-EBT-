@@ -13,7 +13,6 @@ pub enum TransportError {
     EncryptionFailed,
     DecryptionFailed,
     Unimplemented(&'static str),
-    MultiplexingNotAllowed,
 }
 
 impl std::fmt::Display for TransportError {
@@ -23,7 +22,6 @@ impl std::fmt::Display for TransportError {
             TransportError::EncryptionFailed => write!(f, "Data encryption failed"),
             TransportError::DecryptionFailed => write!(f, "Data decryption failed"),
             TransportError::Unimplemented(detail) => write!(f, "Unimplemented transport behavior: {detail}"),
-            TransportError::MultiplexingNotAllowed => write!(f, "SSH multiplexing is not allowed"),
         }
     }
 }

@@ -53,6 +53,9 @@ impl TransportAdapter for SshTransportAdapter {
                     };
 
                     if channel.eof() || channel.is_closed() {
+                        if let Ok(mut cb) = callbacks.lock() {
+                            cb.on_transport_error(TransportError::ConnectionLost);
+                        }
                         break;
                     }
 

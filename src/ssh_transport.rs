@@ -65,7 +65,7 @@ impl EncryptedTransport for SshTransport {
         // We allow exactly one SSH channel for the lifetime of this transport.
         // Any attempt to re-establish or open additional channels is a hard failure.
         if self.session.is_some() || self.channel_opened || self.channel.borrow().is_some() {
-            return Err(TransportError::MultiplexingNotAllowed);
+            return Err(TransportError::ConnectionFailed);
         }
 
         let tcp_stream = TcpStream::connect((self.host.as_str(), self.port))
