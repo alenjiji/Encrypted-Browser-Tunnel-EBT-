@@ -23,7 +23,7 @@ impl SshTransportAdapter {
 impl TransportAdapter for SshTransportAdapter {
     fn send_bytes(&mut self, data: &[u8]) -> Result<(), TransportError> {
         let mut channel = self.channel.lock().map_err(|_| TransportError::ConnectionLost)?;
-        if channel.eof() || channel.is_closed() {
+        if channel.eof() {
             return Err(TransportError::ConnectionLost);
         }
 
@@ -52,7 +52,7 @@ impl TransportAdapter for SshTransportAdapter {
                         }
                     };
 
-                    if channel.eof() || channel.is_closed() {
+                    if channel.eof() {
                         if let Ok(mut cb) = callbacks.lock() {
                             cb.on_transport_error(TransportError::ConnectionLost);
                         }

@@ -72,7 +72,7 @@ impl EncryptedTransport for SshTransport {
         let tcp_stream = TcpStream::connect((self.host.as_str(), self.port))
             .map_err(|_| TransportError::ConnectionFailed)?;
 
-        let mut session = Session::new().ok_or(TransportError::ConnectionFailed)?;
+        let mut session = Session::new().map_err(|_| TransportError::ConnectionFailed)?;
         session.set_tcp_stream(tcp_stream);
         session
             .handshake()
@@ -116,7 +116,7 @@ impl EncryptedTransport for SshTransport {
             return Err(TransportError::EncryptionFailed);
         };
 
-        if channel.eof() || channel.is_closed() {
+        if channel.eof() {
             return Err(TransportError::ConnectionFailed);
         }
 
@@ -136,7 +136,7 @@ impl EncryptedTransport for SshTransport {
             return Err(TransportError::DecryptionFailed);
         };
 
-        if channel.eof() || channel.is_closed() {
+        if channel.eof() {
             return Err(TransportError::ConnectionFailed);
         }
 
