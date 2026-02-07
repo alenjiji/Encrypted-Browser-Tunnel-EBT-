@@ -44,7 +44,7 @@ mod control_channel;
 mod async_tunnel;
 
 use std::error::Error;
-use config::{ProxyPolicy, ProxyMode};
+use config::{ProxyPolicy, TunnelConfig};
 use crate::content_policy_bootstrap::build_content_policy_engine;
 
 #[cfg(feature = "tokio")]
@@ -89,13 +89,11 @@ async fn tokio_main() -> Result<(), Box<dyn Error>> {
     // session.establish_tunnel().await?;
     
     // Start real proxy server
-    let proxy_policy = ProxyPolicy {
-        mode: ProxyMode::Application,
-        bind_address: "127.0.0.1".to_string(),
-        bind_port: 8080,
-        authentication: None,
-        content_policy_enabled: false,
-        content_policy_rules: None,
+    let use_profile = false;
+    let proxy_policy = if use_profile {
+        TunnelConfig::ssh_socks_profile().proxy_policy
+    } else {
+        ProxyPolicy::default()
     };
     
     println!("\n=== Starting Real Network Mode ===");

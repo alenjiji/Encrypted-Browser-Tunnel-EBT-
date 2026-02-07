@@ -1,0 +1,22 @@
+! === YouTube ad / tracking domains (connection-level) ===
+
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||adsystem.com^
+
+! Measurement / tracking often tied to ad delivery
+||google-analytics.com^
+||stats.g.doubleclick.net^
+
+! Some ad-related media/requests routed via gvt*
+||gvt1.com^
+||gvt2.com^
+
+! YouTube-specific ad/tracking helpers
+||youtubeads.googleapis.com^
+||pagead2.googlesyndication.com^
+
+! Optional: telemetry that often accompanies ads
+||adservice.google.com^
+||adservice.google.co.in^

@@ -1,4 +1,4 @@
-# Encrypted Browser Tunnel (Educational) - Rust Implementation
+# Encrypted Browser Tunnel - Rust Implementation
 
 A minimal Rust project skeleton implementing the conceptual architecture documented in `Documentation/`.
 
@@ -20,7 +20,7 @@ src/
 - **EncryptedTransport**: Trait for SSH/TLS/QUIC transport layers
 - **DnsResolver**: Local vs remote DNS resolution with leak detection
 
-## Educational Purpose
+## Project Purpose
 
 This skeleton demonstrates the architectural concepts from the documentation without implementing actual network behavior. Each component contains placeholder methods that log their intended functionality.
 
@@ -32,4 +32,4 @@ cargo run
 
 ## Note
 
-This is an educational tool designed for learning network architecture concepts. No actual network connections are established.
+This tool is designed for learning network architecture concepts. No actual network connections are established.

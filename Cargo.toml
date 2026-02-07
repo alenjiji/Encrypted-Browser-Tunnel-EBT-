@@ -2,7 +2,7 @@
 name = "encrypted-browser-tunnel"
 version = "0.1.0"
 edition = "2021"
-description = "Educational encrypted browser tunnel implementation"
+description = "Encrypted browser tunnel implementation"
 license = "MIT"
 
 [dependencies]
