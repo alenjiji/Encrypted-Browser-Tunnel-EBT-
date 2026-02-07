@@ -217,12 +217,30 @@ impl RealProxyServer {
                     port,
                     headers,
                 );
-                if matches!(policy_adapter.evaluate(&metadata), Decision::Block { .. }) {
-                    let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
-                    stream.write_all(response)?;
-                    stream.flush()?;
-                    let _ = stream.shutdown(std::net::Shutdown::Both);
-                    return Ok(());
+                match policy_adapter.evaluate(&metadata) {
+                    Decision::Allow => {
+                        observability::record_policy_allowed();
+                    }
+                    Decision::Block { reason } => {
+                        observability::record_policy_blocked();
+                        match reason {
+                            crate::content_policy::ReasonCode::Ads => {
+                                observability::record_policy_blocked_ads();
+                            }
+                            crate::content_policy::ReasonCode::Tracking => {
+                                observability::record_policy_blocked_tracking();
+                            }
+                            crate::content_policy::ReasonCode::Custom => {
+                                observability::record_policy_blocked_custom();
+                            }
+                            crate::content_policy::ReasonCode::Unknown => {}
+                        }
+                        let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+                        stream.write_all(response)?;
+                        stream.flush()?;
+                        let _ = stream.shutdown(std::net::Shutdown::Both);
+                        return Ok(());
+                    }
                 }
             }
             

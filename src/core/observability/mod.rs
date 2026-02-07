@@ -73,6 +73,11 @@ static TOTAL_CONNECTIONS_CLOSED: AtomicU64 = AtomicU64::new(0);
 static FRAMES_SENT: AtomicU64 = AtomicU64::new(0);
 static FRAMES_RECEIVED: AtomicU64 = AtomicU64::new(0);
 static HEADER_DISCARD_COUNT: AtomicU64 = AtomicU64::new(0);
+static POLICY_TOTAL_ALLOWED: AtomicU64 = AtomicU64::new(0);
+static POLICY_TOTAL_BLOCKED: AtomicU64 = AtomicU64::new(0);
+static POLICY_BLOCKED_ADS: AtomicU64 = AtomicU64::new(0);
+static POLICY_BLOCKED_TRACKING: AtomicU64 = AtomicU64::new(0);
+static POLICY_BLOCKED_CUSTOM: AtomicU64 = AtomicU64::new(0);
 
 const BYTE_BUCKETS: usize = 21;
 static BYTES_SENT_COARSE: [AtomicU64; BYTE_BUCKETS] = [const { AtomicU64::new(0) }; BYTE_BUCKETS];
@@ -116,6 +121,31 @@ pub fn record_header_discard() {
 }
 
 #[inline]
+pub fn record_policy_allowed() {
+    POLICY_TOTAL_ALLOWED.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn record_policy_blocked() {
+    POLICY_TOTAL_BLOCKED.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn record_policy_blocked_ads() {
+    POLICY_BLOCKED_ADS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn record_policy_blocked_tracking() {
+    POLICY_BLOCKED_TRACKING.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub fn record_policy_blocked_custom() {
+    POLICY_BLOCKED_CUSTOM.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
 const fn coarse_bucket_index(byte_len: usize) -> usize {
     if byte_len == 0 {
         return 0;
@@ -139,6 +169,11 @@ pub struct ObservabilitySnapshot {
     pub bytes_received_coarse: [u64; BYTE_BUCKETS],
     pub header_discards: u64,
     pub error_class_counts: [u64; ERROR_CLASS_COUNT],
+    pub policy_total_allowed: u64,
+    pub policy_total_blocked: u64,
+    pub policy_blocked_ads: u64,
+    pub policy_blocked_tracking: u64,
+    pub policy_blocked_custom: u64,
 }
 
 pub fn snapshot() -> Option<ObservabilitySnapshot> {
@@ -166,5 +201,10 @@ pub fn snapshot() -> Option<ObservabilitySnapshot> {
         bytes_received_coarse,
         header_discards: HEADER_DISCARD_COUNT.load(Ordering::Relaxed),
         error_class_counts,
+        policy_total_allowed: POLICY_TOTAL_ALLOWED.load(Ordering::Relaxed),
+        policy_total_blocked: POLICY_TOTAL_BLOCKED.load(Ordering::Relaxed),
+        policy_blocked_ads: POLICY_BLOCKED_ADS.load(Ordering::Relaxed),
+        policy_blocked_tracking: POLICY_BLOCKED_TRACKING.load(Ordering::Relaxed),
+        policy_blocked_custom: POLICY_BLOCKED_CUSTOM.load(Ordering::Relaxed),
     })
 }
