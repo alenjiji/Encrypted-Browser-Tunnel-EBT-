@@ -224,19 +224,16 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
         });
         
         // Sequential connection attempts
-        log!(LogLevel::Debug, "Sequential connection attempts to {}:{} ({} IPs)", 
-             self.target_host, self.target_port, ips.len());
+        log!(LogLevel::Debug, "Sequential connection attempts ({} IPs)", ips.len());
         
         let mut last_error = None;
         
         for ip in ips {
-            log!(LogLevel::Debug, "Attempting connection to {}:{} via {}", 
-                 self.target_host, self.target_port, ip);
+            log!(LogLevel::Debug, "Attempting connection via {}", ip);
             
             match self.relay_transport.establish_relay_connection(ip, self.target_port).await {
                 Ok(tcp) => {
-                    log!(LogLevel::Debug, "Connection established to {}:{} via {}", 
-                         self.target_host, self.target_port, ip);
+                    log!(LogLevel::Debug, "Connection established via {}", ip);
                     
                     let std_stream = tcp.into_std().map_err(|e| {
                         log!(LogLevel::Debug, "Failed to convert tokio stream to std: {}", e);
@@ -253,8 +250,7 @@ impl EncryptedTransport for DirectTcpTunnelTransport {
             }
         }
         
-        log!(LogLevel::Error, "All sequential connection attempts failed for {}: {:?}", 
-             self.target_host, last_error);
+        log!(LogLevel::Error, "All sequential connection attempts failed: {:?}", last_error);
         Err(TransportError::ConnectionFailed)
     }
     
