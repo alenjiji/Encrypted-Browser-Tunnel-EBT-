@@ -12,6 +12,7 @@ pub struct SshTransport {
     port: u16,
     session: Option<Session>,
     channel: RefCell<Option<ssh2::Channel>>,
+    channel_opened: bool,
 }
 
 impl SshTransport {
@@ -21,6 +22,7 @@ impl SshTransport {
             port,
             session: None,
             channel: RefCell::new(None),
+            channel_opened: false,
         }
     }
 
@@ -42,6 +44,13 @@ impl SshTransport {
 
 impl EncryptedTransport for SshTransport {
     async fn establish_connection(&mut self) -> Result<(), TransportError> {
+        // Multiplexing neutralization:
+        // We allow exactly one SSH channel for the lifetime of this transport.
+        // Any attempt to re-establish or open additional channels is a hard failure.
+        if self.session.is_some() || self.channel_opened || self.channel.borrow().is_some() {
+            return Err(TransportError::MultiplexingNotAllowed);
+        }
+
         let tcp_stream = TcpStream::connect((self.host.as_str(), self.port))
             .map_err(|_| TransportError::ConnectionFailed)?;
 
@@ -79,6 +88,7 @@ impl EncryptedTransport for SshTransport {
 
         self.channel.replace(Some(channel));
         self.session = Some(session);
+        self.channel_opened = true;
         Ok(())
     }
 
