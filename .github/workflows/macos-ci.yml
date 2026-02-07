@@ -40,12 +40,12 @@ jobs:
     
     - name: Build
       run: |
-        cargo build --verbose 2>&1 | tee build.log
+        cargo build --verbose 2>&1 | tee ${{ github.workspace }}/build.log
         echo "=== COMPILATION ERRORS ONLY ==="
-        grep -E "^error\[|^  --> |^   \|" build.log || echo "No compilation errors found"
+        grep -E "^error\[|^  --> |^   \|" ${{ github.workspace }}/build.log || echo "No compilation errors found"
     
     - name: Run tests
-      run: cargo test --verbose 2>&1 | tee test.log
+      run: cargo test --verbose 2>&1 | tee ${{ github.workspace }}/test.log
     
     - name: Upload build logs on failure
       if: failure()
@@ -53,8 +53,8 @@ jobs:
       with:
         name: build-logs-macos
         path: |
-          build.log
-          test.log
+          ${{ github.workspace }}/build.log
+          ${{ github.workspace }}/test.log
     
     - name: Run Phase 4 threat invariant checks
       if: success()
