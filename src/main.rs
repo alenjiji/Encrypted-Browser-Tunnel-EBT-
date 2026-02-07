@@ -34,6 +34,7 @@ mod transport_adapter;
 mod protocol_engine;
 mod connection_mapping;
 mod binding_pump;
+mod content_policy;
 #[cfg(feature = "encrypted_control")]
 mod control_channel;
 #[cfg(feature = "async_tunnel")]
