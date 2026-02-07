@@ -8,6 +8,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 
 /// SSH-based encrypted transport
+/// Phase 8 frozen: do not modify without a Phase bump.
 pub struct SshTransport {
     host: String,
     port: u16,
