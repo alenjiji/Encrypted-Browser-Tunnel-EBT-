@@ -1,5 +1,9 @@
 use std::collections::BTreeMap;
 
+mod easylist;
+
+pub use easylist::ruleset_from_easylist;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestMetadata {
     pub method: String,
