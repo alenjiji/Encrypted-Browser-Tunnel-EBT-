@@ -48,8 +48,8 @@ impl TunnelConfig {
                 bind_address: "127.0.0.1".to_string(),
                 bind_port: 8080,
                 authentication: None,
-                content_policy_enabled: true,
-                content_policy_rules: Some("easylist.txt".to_string()),
+                content_policy_enabled: false,
+                content_policy_rules: None,
             },
         }
     }
