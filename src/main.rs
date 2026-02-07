@@ -36,6 +36,7 @@ mod connection_mapping;
 mod binding_pump;
 mod anonymity;
 mod phase9_protocol;
+mod phase9_binding;
 mod content_policy;
 mod content_policy_bootstrap;
 #[cfg(test)]
