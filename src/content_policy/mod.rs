@@ -1,3 +1,8 @@
+//! Phase 7.5 FROZEN.
+//! Content policy is frozen and must remain at the proxy edge only.
+//! Relay protocol and transport must remain content-blind.
+//! Any change here requires explicit Phase 7.5 review.
+
 use std::collections::BTreeMap;
 
 mod easylist;
@@ -152,6 +157,7 @@ pub struct ContentPolicyEngine {
 }
 
 impl ContentPolicyEngine {
+    /// Phase 7.5 FROZEN: proxy-edge only. Do not invoke below the proxy edge.
     pub fn new(rules: RuleSet) -> Self {
         Self { rules }
     }

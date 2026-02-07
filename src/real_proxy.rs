@@ -206,6 +206,8 @@ impl RealProxyServer {
             
             log!(LogLevel::Debug, "CONNECT tunnel requested");
 
+            // WARNING (Phase 7.5 FROZEN): policy gate must remain here, pre-CONNECT.
+            // Do not move or replicate policy logic below the proxy edge.
             if !policy_allows_connect(policy_adapter.as_ref(), &request, &host, port) {
                 let response = b"HTTP/1.1 403 Forbidden\r\n\r\n";
                 stream.write_all(response)?;
@@ -478,6 +480,8 @@ fn build_connect_metadata(request: &str, host: &str, port: u16) -> RequestMetada
     )
 }
 
+/// WARNING (Phase 7.5 FROZEN): keep policy logic at the proxy edge only.
+/// Do not pass policy decisions into relay protocol or transport layers.
 fn policy_allows_connect(
     policy_adapter: &PolicyAdapter,
     request: &str,
