@@ -78,7 +78,7 @@ mod crypto_transport_tests {
         let result = exit_resolver.resolve_hostname("example.com").await;
         assert!(result.is_ok());
         
-        let entry_tunnel_manager = TunnelManager::new(TrustZone::Entry);
+        let _entry_tunnel_manager = TunnelManager::new(TrustZone::Entry);
         let context = InvariantContext {
             component_name: "entry_zone".to_string(),
             has_source_ip: true,
